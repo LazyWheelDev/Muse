@@ -1,0 +1,271 @@
+.page {
+  block-size: calc(100dvh - (2 * var(--space-4)));
+  min-block-size: calc(100dvh - (2 * var(--space-4)));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: var(--space-2);
+}
+
+.savedStatus {
+  min-block-size: var(--touch-target-min);
+  padding-inline: var(--space-2);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--color-success);
+  background: color-mix(in srgb, var(--color-surface) 94%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-success) 55%, var(--color-border));
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-small);
+  font-family: var(--font-family-display);
+  font-size: var(--font-size-lg);
+}
+
+.detailsLayout {
+  inline-size: min(100%, 75rem);
+  min-block-size: 0;
+  margin-inline: auto;
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: var(--space-3);
+}
+
+.imagePanel {
+  min-inline-size: 0;
+  min-block-size: 0;
+  display: grid;
+  grid-template-rows: minmax(18rem, 1fr) auto auto auto;
+  gap: var(--space-2);
+}
+
+.imageFrame,
+.fullscreenImage {
+  position: relative;
+  min-block-size: 0;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-medium);
+  box-shadow: var(--shadow-medium);
+  touch-action: pan-y;
+}
+
+.carouselArrow,
+.fullscreenButton {
+  position: absolute;
+  z-index: 2;
+}
+
+.carouselArrow {
+  inset-block-start: 50%;
+  transform: translateY(-50%);
+}
+
+.carouselArrow:active:not(:disabled) {
+  transform: translateY(-50%) scale(0.96);
+}
+
+.previousArrow {
+  inset-inline-start: var(--space-1);
+}
+.nextArrow {
+  inset-inline-end: var(--space-1);
+}
+.fullscreenButton {
+  inset-inline-end: var(--space-1);
+  inset-block-end: var(--space-1);
+}
+
+.indicators {
+  min-block-size: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+}
+
+.indicators span {
+  inline-size: 0.7rem;
+  block-size: 0.7rem;
+  background: var(--color-border);
+  border-radius: 50%;
+}
+
+.indicators .indicatorActive {
+  background: var(--color-champagne);
+}
+
+.quickActions {
+  display: flex;
+  justify-content: space-around;
+}
+
+.informationPanel {
+  min-inline-size: 0;
+  min-block-size: 0;
+  overflow-y: auto;
+  padding-inline-start: var(--space-3);
+  border-inline-start: 1px solid var(--color-border);
+  scrollbar-color: var(--color-border) transparent;
+}
+
+.sectionTitle {
+  margin-block: var(--space-1);
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sectionTitle h2 {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-family: var(--font-family-interface);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.sectionTitle span {
+  block-size: 1px;
+  background: var(--color-border);
+}
+
+.detailRow {
+  position: relative;
+  min-block-size: var(--touch-target-min);
+  padding: 0.4rem var(--space-2);
+  display: grid;
+  grid-template-columns: 2rem minmax(7rem, auto) minmax(0, 1fr) 1.5rem;
+  align-items: center;
+  gap: var(--space-1);
+  background: color-mix(in srgb, var(--color-surface) 92%, transparent);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+}
+
+.detailRow + .detailRow {
+  margin-block-start: 0.2rem;
+}
+.fieldIcon {
+  color: var(--color-champagne-dark);
+}
+.fieldIcon svg {
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+}
+.detailRow label {
+  font-weight: var(--font-weight-medium);
+}
+.fieldValue,
+.mutedValue {
+  min-inline-size: 0;
+  text-align: end;
+  overflow-wrap: anywhere;
+}
+.mutedValue {
+  color: var(--color-text-muted);
+}
+.pencilCue {
+  color: var(--color-champagne-dark);
+}
+
+.editControl {
+  grid-column: 3 / 5;
+  min-inline-size: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+
+.editControl input,
+.editControl select,
+.editControl textarea {
+  min-block-size: var(--touch-target-min);
+  min-inline-size: 0;
+  flex: 1 1 8rem;
+  padding-inline: var(--space-1);
+  color: var(--color-text-primary);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+}
+
+.editControl textarea {
+  min-block-size: 6rem;
+  padding-block: var(--space-1);
+  resize: vertical;
+}
+.editControl .currencyInput {
+  flex: 0 0 5rem;
+}
+.rowError {
+  flex-basis: 100%;
+  color: var(--color-danger);
+  font-size: var(--font-size-sm);
+}
+.saveError {
+  margin: var(--space-2) 0;
+  color: var(--color-danger);
+  font-weight: var(--font-weight-medium);
+}
+
+.processingStatus {
+  margin-block-start: var(--space-2);
+  padding: var(--space-2);
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-2);
+  color: var(--color-text-secondary);
+  background: var(--color-background-soft);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-medium);
+}
+
+.processingStatus svg {
+  color: var(--color-warning);
+}
+.processingStatus strong {
+  color: var(--color-text-primary);
+}
+.processingStatus p {
+  margin: 0.25rem 0 0;
+}
+
+.fullscreenDialog {
+  inline-size: calc(100vw - (2 * var(--space-3)));
+  max-inline-size: none;
+  block-size: calc(100dvh - (2 * var(--space-3)));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+@media (max-width: 62rem) {
+  .page {
+    block-size: auto;
+  }
+
+  .detailsLayout {
+    grid-template-columns: 1fr;
+  }
+  .informationPanel {
+    overflow-y: visible;
+    padding-inline-start: 0;
+    border-inline-start: 0;
+  }
+}
+
+@media (max-width: 44rem) {
+  .detailRow {
+    grid-template-columns: 2rem minmax(0, 1fr) 1.5rem;
+  }
+  .fieldValue,
+  .mutedValue {
+    grid-column: 2 / 3;
+    text-align: start;
+  }
+  .editControl {
+    grid-column: 2 / 4;
+  }
+}

@@ -1,0 +1,106 @@
+.button,
+.linkButton {
+  min-block-size: var(--touch-target-min);
+  min-inline-size: var(--touch-target-min);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: 0.75rem var(--space-3);
+  color: var(--color-text-primary);
+  background: color-mix(in srgb, var(--color-surface) 96%, transparent);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-small);
+  font-family: var(--font-family-interface);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.15;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color var(--motion-fast) var(--motion-ease-out),
+    border-color var(--motion-fast) var(--motion-ease-out),
+    box-shadow var(--motion-fast) var(--motion-ease-out),
+    transform var(--motion-fast) var(--motion-ease-out);
+}
+
+.button:active:not(:disabled),
+.linkButton:active {
+  background: var(--color-surface-muted);
+  border-color: var(--color-champagne-dark);
+  box-shadow: none;
+  transform: scale(0.98);
+}
+
+.button:disabled {
+  color: var(--color-text-secondary);
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.primary {
+  background: linear-gradient(135deg, #f4d7a4, #d2ac6c);
+  border-color: var(--color-champagne-dark);
+  box-shadow: var(--shadow-medium);
+}
+
+.danger {
+  color: var(--color-danger);
+  border-color: color-mix(in srgb, var(--color-danger) 55%, var(--color-border));
+}
+
+.quiet {
+  background: transparent;
+  box-shadow: none;
+}
+
+.fullWidth {
+  inline-size: 100%;
+}
+
+.roundAction {
+  min-inline-size: 5rem;
+  min-block-size: 5.75rem;
+  padding: 0;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--space-1);
+  color: var(--color-text-primary);
+  background: transparent;
+  border: 0;
+  font-family: var(--font-family-display);
+  font-size: var(--font-size-base);
+  cursor: pointer;
+}
+
+.roundActionIcon {
+  inline-size: var(--touch-target-min);
+  block-size: var(--touch-target-min);
+  display: grid;
+  place-items: center;
+  color: var(--color-champagne-dark);
+  background: color-mix(in srgb, var(--color-surface) 96%, transparent);
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  box-shadow: var(--shadow-small);
+  transition:
+    box-shadow var(--motion-fast) var(--motion-ease-out),
+    transform var(--motion-fast) var(--motion-ease-out);
+}
+
+.roundAction:active .roundActionIcon {
+  box-shadow: none;
+  transform: scale(0.96);
+}
+
+.roundAction:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.iconOnly {
+  padding: 0;
+  border-radius: 50%;
+}

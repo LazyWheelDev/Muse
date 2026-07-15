@@ -1,0 +1,41 @@
+.field {
+  min-inline-size: 0;
+  display: grid;
+  gap: 0.375rem;
+}
+
+.label {
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-medium);
+}
+
+.hint {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.control {
+  min-block-size: var(--touch-target-min);
+  inline-size: 100%;
+  padding: 0.75rem var(--space-2);
+  color: var(--color-text-primary);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  box-shadow: inset 0 1px 2px rgb(117 111 102 / 7%);
+}
+
+.control[aria-invalid='true'] {
+  border-color: var(--color-danger);
+}
+
+textarea.control {
+  min-block-size: 6.5rem;
+  resize: vertical;
+}
+
+.error {
+  color: var(--color-danger);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}

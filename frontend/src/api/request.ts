@@ -7,6 +7,9 @@ export type JsonDecoder<T> = (value: unknown) => T;
 export interface ApiRequestOptions {
   signal?: AbortSignal;
   acceptedStatuses?: readonly number[];
+  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  body?: BodyInit;
+  headers?: HeadersInit;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -22,7 +25,7 @@ function readSafeString(value: unknown): string | undefined {
   return trimmedValue.length > 0 && trimmedValue.length <= 500 ? trimmedValue : undefined;
 }
 
-function decodeErrorEnvelope(value: unknown): ApiErrorEnvelope | undefined {
+export function decodeErrorEnvelope(value: unknown): ApiErrorEnvelope | undefined {
   if (!isRecord(value) || !isRecord(value.error)) {
     return undefined;
   }
@@ -46,7 +49,7 @@ function decodeErrorEnvelope(value: unknown): ApiErrorEnvelope | undefined {
   };
 }
 
-async function readJsonSafely(response: Response): Promise<unknown> {
+export async function readJsonSafely(response: Response): Promise<unknown> {
   const contentType = response.headers.get('content-type');
 
   if (contentType === null || !contentType.toLowerCase().includes('application/json')) {
@@ -60,7 +63,7 @@ async function readJsonSafely(response: Response): Promise<unknown> {
   }
 }
 
-function fallbackHttpMessage(status: number): string {
+export function fallbackHttpMessage(status: number): string {
   if (status === 404) {
     return 'The requested local resource could not be found.';
   }
@@ -99,6 +102,12 @@ async function createHttpError(response: Response): Promise<ApiClientError> {
   });
 }
 
+function requestHeaders(options: ApiRequestOptions): Headers {
+  const headers = new Headers(options.headers);
+  headers.set('Accept', 'application/json');
+  return headers;
+}
+
 export async function requestJson<T>(
   endpointPath: `/${string}`,
   decoder: JsonDecoder<T>,
@@ -108,10 +117,11 @@ export async function requestJson<T>(
 
   try {
     response = await fetch(createApiUrl(endpointPath), {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
+      method: options.method ?? 'GET',
+      headers: requestHeaders(options),
       cache: 'no-store',
       credentials: 'same-origin',
+      ...(options.body === undefined ? {} : { body: options.body }),
       ...(options.signal === undefined ? {} : { signal: options.signal }),
     });
   } catch (error) {
@@ -143,5 +153,38 @@ export async function requestJson<T>(
       status: response.status,
       cause: error,
     });
+  }
+}
+
+export async function requestVoid(
+  endpointPath: `/${string}`,
+  options: ApiRequestOptions = {},
+): Promise<void> {
+  let response: Response;
+
+  try {
+    response = await fetch(createApiUrl(endpointPath), {
+      method: options.method ?? 'DELETE',
+      headers: requestHeaders(options),
+      cache: 'no-store',
+      credentials: 'same-origin',
+      ...(options.body === undefined ? {} : { body: options.body }),
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
+    });
+  } catch (error) {
+    if (isAbortError(error)) {
+      throw error;
+    }
+
+    throw new ApiClientError({
+      code: 'backend_unavailable',
+      message: 'Muse could not reach its local service.',
+      cause: error,
+    });
+  }
+
+  const acceptedStatus = options.acceptedStatuses?.includes(response.status) ?? false;
+  if (!response.ok && !acceptedStatus) {
+    throw await createHttpError(response);
   }
 }
