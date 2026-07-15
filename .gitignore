@@ -1,6 +1,7 @@
 # Node and Vite
 node_modules/
 dist/
+dist-phone/
 .vite/
 .npm/
 *.tsbuildinfo

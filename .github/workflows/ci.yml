@@ -16,7 +16,7 @@ jobs:
   verify:
     name: Verify application
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
 
     steps:
       - name: Check out repository
@@ -28,8 +28,15 @@ jobs:
           found=0
           while IFS= read -r -d '' path; do
             [[ -e "$path" ]] || continue
+            if [[ "$path" == ".env" || "$path" == */.env || "$path" == */.env.* ]]; then
+              if [[ "$path" != ".env.example" && "$path" != */.env.example ]]; then
+                printf 'Tracked environment file: %s\n' "$path"
+                found=1
+                continue
+              fi
+            fi
             case "/${path}" in
-              */.coverage*|*.db|*.db-journal|*.db-shm|*.db-wal|*.sqlite|*.sqlite-journal|*.sqlite-shm|*.sqlite-wal|*.sqlite3|*.sqlite3-journal|*.sqlite3-shm|*.sqlite3-wal|*/node_modules/*|*/.venv/*|*/venv/*|*/__pycache__/*|*/.pytest_cache/*|*/.mypy_cache/*|*/.ruff_cache/*|*/local-data/*|*/test-results/*|*/playwright-report/*)
+              */.coverage*|*.db|*.db-journal|*.db-shm|*.db-wal|*.sqlite|*.sqlite-journal|*.sqlite-shm|*.sqlite-wal|*.sqlite3|*.sqlite3-journal|*.sqlite3-shm|*.sqlite3-wal|*/node_modules/*|*/.venv/*|*/venv/*|*/__pycache__/*|*/.pytest_cache/*|*/.mypy_cache/*|*/.ruff_cache/*|*/local-data/*|*/test-results/*|*/playwright-report/*|*/dist/*|*/dist-phone/*)
                 printf 'Tracked generated artifact: %s\n' "$path"
                 found=1
                 ;;
@@ -46,6 +53,10 @@ jobs:
 
       - name: Install Python
         run: uv python install 3.13
+
+      - name: Verify backend lock file
+        working-directory: backend
+        run: uv lock --check
 
       - name: Install locked backend dependencies
         working-directory: backend
@@ -86,6 +97,20 @@ jobs:
           uv run muse-backend migrate
           uv run muse-backend migration-status
           uv run muse-backend migration-check
+          uv run alembic downgrade -1
+          uv run muse-backend migrate
+          uv run muse-backend migration-status
+          uv run muse-backend migration-check
+          uv run python - <<'PY'
+          import os
+          import sqlite3
+          from pathlib import Path
+
+          database_path = Path(os.environ["MUSE_DATA_ROOT"]) / "muse.sqlite3"
+          with sqlite3.connect(database_path) as connection:
+              assert connection.execute("PRAGMA quick_check").fetchall() == [("ok",)]
+              assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+          PY
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -136,29 +161,35 @@ jobs:
         working-directory: frontend
         run: npm run test:e2e:reuse-build
 
+      - name: Configure production smoke environment
+        shell: bash
+        run: |
+          {
+            echo 'MUSE_ENVIRONMENT=production'
+            echo "MUSE_DATA_ROOT=${RUNNER_TEMP}/muse-production-smoke"
+            echo 'MUSE_SERVE_FRONTEND=true'
+            echo "MUSE_FRONTEND_BUILD_PATH=${GITHUB_WORKSPACE}/frontend/dist"
+            echo 'MUSE_TRUSTED_HOSTS=["127.0.0.1","localhost"]'
+            echo 'MUSE_ALLOWED_ORIGINS=[]'
+            echo 'MUSE_PHONE_UPLOAD_BIND_HOST=127.0.0.1'
+            echo 'MUSE_PHONE_UPLOAD_PORT=8787'
+            echo 'MUSE_PHONE_UPLOAD_TRUSTED_HOSTS=["127.0.0.1","localhost"]'
+            echo "MUSE_PHONE_UPLOAD_FRONTEND_BUILD_PATH=${GITHUB_WORKSPACE}/frontend/dist-phone"
+          } >> "$GITHUB_ENV"
+
       - name: Migrate production-smoke database
         working-directory: backend
-        env:
-          MUSE_ENVIRONMENT: production
-          MUSE_DATA_ROOT: ${{ runner.temp }}/muse-production-smoke
-          MUSE_SERVE_FRONTEND: "true"
-          MUSE_FRONTEND_BUILD_PATH: ${{ github.workspace }}/frontend/dist
-          MUSE_ALLOWED_ORIGINS: "[]"
         run: ${{ runner.temp }}/muse-production-venv/bin/muse-backend migrate
 
       - name: Start same-origin production smoke server
         working-directory: backend
-        env:
-          MUSE_ENVIRONMENT: production
-          MUSE_DATA_ROOT: ${{ runner.temp }}/muse-production-smoke
-          MUSE_SERVE_FRONTEND: "true"
-          MUSE_FRONTEND_BUILD_PATH: ${{ github.workspace }}/frontend/dist
-          MUSE_ALLOWED_ORIGINS: "[]"
         run: |
-          "${RUNNER_TEMP}/muse-production-venv/bin/muse-backend" serve --host 127.0.0.1 --port 8000 > "${RUNNER_TEMP}/muse-backend.log" 2>&1 &
+          PATH="${RUNNER_TEMP}/muse-production-venv/bin:/usr/bin:/bin" \
+            "${RUNNER_TEMP}/muse-production-venv/bin/muse-backend" serve --host 127.0.0.1 --port 8000 > "${RUNNER_TEMP}/muse-backend.log" 2>&1 &
           echo $! > "${RUNNER_TEMP}/muse-backend.pid"
 
       - name: Verify backend health and readiness
+        shell: bash
         run: |
           for attempt in {1..30}; do
             if curl --fail --silent http://127.0.0.1:8000/api/v1/health > /dev/null; then
@@ -179,15 +210,185 @@ jobs:
           PLAYWRIGHT_BASE_URL: http://127.0.0.1:8000
         run: npm run test:e2e:production
 
-      - name: Stop production smoke server
+      - name: Stop same-origin production smoke server
         if: always()
         run: |
           if [ -f "${RUNNER_TEMP}/muse-backend.pid" ]; then
-            kill "$(cat "${RUNNER_TEMP}/muse-backend.pid")" 2>/dev/null || true
+            pid="$(cat "${RUNNER_TEMP}/muse-backend.pid")"
+            kill "$pid" 2>/dev/null || true
+            for attempt in {1..50}; do
+              if ! kill -0 "$pid" 2>/dev/null; then
+                break
+              fi
+              if [ "$attempt" -eq 50 ]; then
+                printf 'Main production smoke server did not stop cleanly\n'
+                exit 1
+              fi
+              sleep 0.2
+            done
+          fi
+
+      - name: Configure empty phone-upload production database
+        shell: bash
+        run: |
+          {
+            echo "MUSE_DATA_ROOT=${RUNNER_TEMP}/muse-phone-e2e"
+            echo 'MUSE_PHONE_UPLOAD_ENABLED=true'
+          } >> "$GITHUB_ENV"
+
+      - name: Migrate empty phone-upload production database
+        working-directory: backend
+        run: |
+          "${RUNNER_TEMP}/muse-production-venv/bin/muse-backend" migrate
+          "${RUNNER_TEMP}/muse-production-venv/bin/python" - <<'PY'
+          import sqlite3
+
+          from muse_backend.config import Settings
+
+          with sqlite3.connect(Settings().database_path) as connection:
+              assert connection.execute("SELECT COUNT(*) FROM clothing_items").fetchone() == (0,)
+              assert connection.execute("SELECT COUNT(*) FROM phone_upload_sessions").fetchone() == (0,)
+          PY
+
+      - name: Start phone-upload main smoke server
+        working-directory: backend
+        run: |
+          PATH="${RUNNER_TEMP}/muse-production-venv/bin:/usr/bin:/bin" \
+            "${RUNNER_TEMP}/muse-production-venv/bin/muse-backend" serve --host 127.0.0.1 --port 8000 > "${RUNNER_TEMP}/muse-phone-main.log" 2>&1 &
+          echo $! > "${RUNNER_TEMP}/muse-phone-main.pid"
+
+      - name: Start restricted phone-upload smoke listener
+        working-directory: backend
+        run: |
+          PATH="${RUNNER_TEMP}/muse-production-venv/bin:/usr/bin:/bin" \
+            "${RUNNER_TEMP}/muse-production-venv/bin/muse-backend" serve-phone-upload > "${RUNNER_TEMP}/muse-phone-upload.log" 2>&1 &
+          echo $! > "${RUNNER_TEMP}/muse-phone-upload.pid"
+
+      - name: Verify phone-upload listeners and LAN isolation
+        shell: bash
+        run: |
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8000/api/v1/health > /dev/null \
+              && curl --fail --silent http://127.0.0.1:8787/listener-status > /dev/null; then
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              cat "${RUNNER_TEMP}/muse-phone-main.log"
+              cat "${RUNNER_TEMP}/muse-phone-upload.log"
+              exit 1
+            fi
+            sleep 1
+          done
+          curl --fail --show-error http://127.0.0.1:8000/api/v1/health
+          curl --fail --show-error http://127.0.0.1:8000/api/v1/readiness
+          curl --fail --show-error http://127.0.0.1:8787/listener-status
+
+          for path in \
+            /api/v1/health \
+            /api/v1/clothing-items \
+            /api/v1/phone-upload-sessions \
+            /api/v1/outfits \
+            /api/v1/settings \
+            /api/v1/media/example.webp \
+            /api/docs \
+            /api/openapi.json; do
+            status="$(curl --silent --output /dev/null --write-out '%{http_code}' "http://127.0.0.1:8787${path}")"
+            if [ "$status" != '404' ]; then
+              printf 'Restricted listener exposed %s with status %s\n' "$path" "$status"
+              exit 1
+            fi
+          done
+
+          status="$(curl --silent --output /dev/null --write-out '%{http_code}' --header 'Host: untrusted.invalid' http://127.0.0.1:8787/listener-status)"
+          if [ "$status" != '400' ]; then
+            printf 'Restricted listener accepted an untrusted Host with status %s\n' "$status"
+            exit 1
+          fi
+
+      - name: Test production phone-upload integration
+        working-directory: frontend
+        env:
+          PLAYWRIGHT_BASE_URL: http://127.0.0.1:8000
+          PLAYWRIGHT_PHONE_UPLOAD_BASE_URL: http://127.0.0.1:8787
+          MUSE_BACKEND_EXECUTABLE: ${{ runner.temp }}/muse-production-venv/bin/muse-backend
+          MUSE_MAIN_PID_FILE: ${{ runner.temp }}/muse-phone-main.pid
+          MUSE_PHONE_PID_FILE: ${{ runner.temp }}/muse-phone-upload.pid
+          MUSE_PHONE_E2E_DATA_ROOT: ${{ runner.temp }}/muse-phone-e2e
+        shell: bash
+        run: |
+          if ! npm run test:e2e:production:p4; then
+            touch "${RUNNER_TEMP}/muse-phone-e2e-failed"
+            exit 1
+          fi
+
+      - name: Run bounded phone-session cleanup
+        working-directory: backend
+        shell: bash
+        run: |
+          found=0
+          for data_root in "${RUNNER_TEMP}/muse-phone-e2e"/playwright-attempt-*; do
+            if [ ! -d "$data_root" ]; then
+              continue
+            fi
+            MUSE_DATA_ROOT="$data_root" \
+              "${RUNNER_TEMP}/muse-production-venv/bin/muse-backend" cleanup-phone-upload-sessions
+            found=1
+          done
+          if [ "$found" -ne 1 ]; then
+            printf 'No isolated P4 data root was available for cleanup\n'
+            exit 1
+          fi
+
+      - name: Stop phone-upload production smoke servers
+        if: always()
+        run: |
+          if [ -f "${RUNNER_TEMP}/muse-phone-upload.pid" ]; then
+            kill "$(cat "${RUNNER_TEMP}/muse-phone-upload.pid")" 2>/dev/null || true
+          fi
+          if [ -f "${RUNNER_TEMP}/muse-phone-main.pid" ]; then
+            kill "$(cat "${RUNNER_TEMP}/muse-phone-main.pid")" 2>/dev/null || true
+          fi
+
+      - name: Scrub phone-upload secrets from failure diagnostics
+        id: scrub_phone_diagnostics
+        if: failure()
+        shell: bash
+        run: |
+          if [ -f "${RUNNER_TEMP}/muse-phone-e2e-failed" ]; then
+            if [ -d frontend/playwright-report ]; then
+              find frontend/playwright-report -depth -delete
+            fi
+            if [ -d frontend/test-results/playwright ]; then
+              find frontend/test-results/playwright -depth -delete
+            fi
+          fi
+
+          diagnostic_paths=()
+          for candidate in \
+            frontend/playwright-report \
+            frontend/test-results/playwright \
+            "${RUNNER_TEMP}/muse-backend.log" \
+            "${RUNNER_TEMP}/muse-phone-main.log" \
+            "${RUNNER_TEMP}/muse-phone-upload.log"; do
+            if [ -e "$candidate" ]; then
+              diagnostic_paths+=("$candidate")
+            fi
+          done
+          if [ "${#diagnostic_paths[@]}" -gt 0 ]; then
+            while IFS= read -r -d '' secret_bearing_file; do
+              find "$secret_bearing_file" -delete
+            done < <(
+              rg --text --files-with-matches --null \
+                '#token=[A-Za-z0-9_-]{43}' "${diagnostic_paths[@]}" || true
+            )
+            if rg --text '#token=[A-Za-z0-9_-]{43}' "${diagnostic_paths[@]}"; then
+              printf 'Refusing to upload diagnostics containing a phone-upload token URL\n'
+              exit 1
+            fi
           fi
 
       - name: Upload failure diagnostics
-        if: failure()
+        if: failure() && steps.scrub_phone_diagnostics.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: ci-diagnostics
@@ -195,5 +396,7 @@ jobs:
             frontend/playwright-report
             frontend/test-results/playwright
             ${{ runner.temp }}/muse-backend.log
+            ${{ runner.temp }}/muse-phone-main.log
+            ${{ runner.temp }}/muse-phone-upload.log
           if-no-files-found: ignore
           retention-days: 7
