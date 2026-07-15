@@ -205,17 +205,18 @@ Category navigation remains part of P3.1 and P3.2.
 
 ## P4.4 Phone Upload Session
 
-- [ ] Create a temporary upload session
-- [ ] Generate an expiring token
-- [ ] Generate a QR code
-- [ ] Create a mobile-friendly upload page
-- [ ] Upload from a phone on the local network
-- [ ] Notify the Muse interface when upload completes
-- [ ] Expire old upload sessions
-
-### Fallback
-
-If QR upload is not ready for the first stable build, local browser upload remains available.
+- [x] Create a persistent temporary upload session
+- [x] Generate a hashed, single-use, expiring token
+- [x] Generate a local QR code with a readable URL fallback
+- [x] Keep the complete Muse API loopback-only
+- [x] Add a separate restricted listener for the trusted LAN
+- [x] Create an accessible mobile-friendly upload page
+- [x] Upload a real image and metadata through the existing secure importer
+- [x] Notify and refresh the Muse interface when upload completes
+- [x] Prevent concurrent submission and replay
+- [x] Reconcile interrupted sessions and expire old sessions in bounded batches
+- [x] Preserve local-device import as the equal first option
+- [x] Document the truthful JPEG, PNG, WebP, and HEIC/HEIF contract
 
 ---
 

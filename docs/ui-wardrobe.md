@@ -333,14 +333,57 @@ The button must remain clearly visible and easy to touch.
 
 ## Garment Import Entry
 
-The Add Garment action opens the local-device garment import directly.
+The Add Garment action opens a focused two-option method choice:
 
-Phone upload through a QR code remains a later MVP milestone. It must not leave
-an inactive or misleading choice in the current Wardrobe interface.
+- **Upload on this device** opens the existing local image and metadata form.
+- **Upload from phone** creates a short-lived local-network session.
+
+Both options are enabled, explicit, and at least `56 × 56 px`. They reuse the
+approved warm ivory, champagne, typography, icon, focus, and button language;
+the choice does not redesign Wardrobe.
+
+The device phone-upload view includes Back navigation, the Add Garment title, a
+locally rendered QR code with a four-module quiet zone and high error
+correction, the readable URL, network availability, remaining time, Cancel, and
+Generate new code. Status text progresses through waiting, phone connected,
+receiving, processing, complete, expired, cancelled, or failed and is announced
+accessibly. The URL remains available if QR rendering fails.
+
+Network availability is the bounded result of the main process probing the
+restricted listener's exact configured address, not an inference from session
+creation. An unavailable listener prevents code creation; a later failed probe
+keeps the existing code visible but disables misleading ready copy and offers a
+safe retry path.
+
+Polling is bounded, slows after a retryable failure, and stops for completed,
+cancelled, or expired sessions. Completion invalidates the Wardrobe collection
+and opens the new garment automatically. A cancelled, expired, completed, or
+superseded code cannot be reused. A failed attempt may retry only while the
+server explicitly allows it. Technical host, database, filesystem, and server
+diagnostics do not appear in the product UI.
 
 The Wardrobe screen must refresh automatically after a new garment is saved.
 
 The newly added garment should become visible immediately.
+
+### Phone page
+
+The separate mobile page uses a single-column layout at approximately
+`390 × 844`. It displays Muse and **Add Garment**, a same-network reminder, a
+large camera/file picker, image preview, replace/remove controls, required name,
+category, derived body zone, and the bounded optional metadata supported by the
+existing import contract. Primary touch targets are at least `56 × 56 px`.
+
+Validation appears beside the relevant field. Transfer progress uses a native
+progress element and live status text; preparing, uploading, processing,
+complete, retryable failure, expired, and already-used states never rely on
+color alone. Focus remains visible, reduced motion preserves all behavior, and
+neither the phone nor device view may overflow horizontally.
+
+The picker requests JPEG, PNG, or WebP and may offer direct camera capture where
+the mobile browser supports it. HEIC and HEIF are not silently renamed or
+partially accepted; the page explains how to capture or export a compatible
+image when one is selected.
 
 ---
 
@@ -543,7 +586,9 @@ Home             → /
 Saved Outfits    → /saved-outfits
 Clothing Details → /wardrobe/:garmentId
 Outfit Builder   → /outfit-builder
-Add Garment      → /wardrobe/add
+Import Method    → /wardrobe/add
+Device Import    → /wardrobe/add/device
+Phone Import     → /wardrobe/add/phone
 ```
 
 ---

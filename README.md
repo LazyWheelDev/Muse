@@ -5,11 +5,12 @@ touchscreen. It lets users organize clothing, compose garments on a silhouette,
 control layers, and save outfits without requiring a cloud account, subscription,
 or Internet connection.
 
-The current implementation includes the local garment and outfit vertical
-slices: streaming image import, exact-original preservation, safe local
-derivatives, SQLite persistence, Wardrobe and Clothing Details, the manual
-Outfit Builder, deterministic local preview generation, and the approved Saved
-Outfits grid. Phone QR import and kiosk deployment remain later milestones.
+The current implementation includes the complete garment, phone-import, and
+outfit vertical slices: secure local streaming import, short-lived QR handoff,
+exact-original preservation, safe local derivatives, SQLite persistence,
+Wardrobe and Clothing Details, the manual Outfit Builder, deterministic local
+preview generation, and the approved Saved Outfits grid. Kiosk deployment and
+physical Raspberry Pi validation remain later milestones.
 
 ## MVP principles
 
@@ -106,6 +107,43 @@ cd frontend
 npm run dev
 ```
 
+`npm run dev:mobile` and `npm run preview:mobile` are available for isolated
+responsive styling work, but they do not replace the token-authorized LAN
+listener. Use the two-process procedure below for a real phone upload.
+
+The ordinary Vite workflow exercises the loopback device application. To test
+the real restricted phone surface, build both frontends and give the main and
+restricted processes the same disposable configuration. Set these values in
+the untracked `backend/.env` before starting either process:
+
+```dotenv
+MUSE_DATA_ROOT=/tmp/muse-phone-upload-dev
+MUSE_PHONE_UPLOAD_ENABLED=true
+MUSE_PHONE_UPLOAD_BIND_HOST=127.0.0.1
+MUSE_PHONE_UPLOAD_TRUSTED_HOSTS=["127.0.0.1","localhost"]
+MUSE_PHONE_UPLOAD_FRONTEND_BUILD_PATH=../frontend/dist-phone
+```
+
+Then build, migrate the disposable database, restart the main process in
+terminal 1, and start the restricted process in terminal 3:
+
+```bash
+cd frontend
+npm run build
+
+cd ../backend
+uv run muse-backend migrate
+uv run muse-backend serve --reload
+
+# Run from backend/ in another terminal with the same backend/.env.
+uv run muse-backend serve-phone-upload
+```
+
+When testing from a separate phone, set both bind and advertised IPv4 to the Pi
+or development machine's same exact private LAN address, add it to the phone
+trusted-host list, and keep the main server on `127.0.0.1`. A loopback listener
+deliberately cannot advertise a LAN hostname or address.
+
 Open `http://127.0.0.1:5173`. Vite proxies relative `/api` requests to
 `http://127.0.0.1:8000`, so frontend code follows the same-origin production
 contract and never embeds a production hostname. Override only the development
@@ -115,6 +153,7 @@ Useful local endpoints:
 
 - Backend health: `http://127.0.0.1:8000/api/v1/health`
 - Backend readiness: `http://127.0.0.1:8000/api/v1/readiness`
+- Restricted-listener status when enabled: `http://127.0.0.1:8787/listener-status`
 - OpenAPI UI: `http://127.0.0.1:8000/api/docs`
 - OpenAPI JSON: `http://127.0.0.1:8000/api/openapi.json`
 
@@ -138,6 +177,7 @@ local-data/
     outfits/previews/
   tmp/uploads/
   tmp/previews/
+  .locks/
   backups/
 ```
 
@@ -155,10 +195,12 @@ inside the configured temporary root.
 ## Garment import and local images
 
 Open Wardrobe and choose **Add Garment**, or navigate directly to
-`/wardrobe/add`. Muse accepts one JPEG, PNG, or WebP source photograph together
-with validated garment metadata. The server verifies the file signature,
-declared MIME type, filename suffix, dimensions, pixel count, frame count, color
-mode, complete decode, EXIF orientation, and bounded color-profile data.
+`/wardrobe/add`, to choose the import method. `/wardrobe/add/device` opens the
+local form; `/wardrobe/add/phone` opens the QR session view. Both methods accept
+one JPEG, PNG, or WebP source photograph with validated garment metadata through
+the same importer. The server verifies the file signature, declared MIME type,
+filename suffix, dimensions, pixel count, frame count, color mode, complete
+decode, EXIF orientation, and bounded color-profile data.
 
 An acknowledged import has already stored:
 
@@ -184,6 +226,96 @@ to coordinate atomic file promotion with the SQLite transaction. Startup
 reconciliation preserves committed media, compensates interrupted uncommitted
 promotions, clears stale temporary attempts, and resumes interrupted optional
 processing. Soft deletion does not remove any image bytes.
+
+### Import from a phone
+
+Add Garment offers **Upload on this device** and **Upload from phone**. The
+second option creates a persistent, short-lived session and displays a locally
+generated QR code, readable fallback URL, expiry countdown, cancel, and
+regenerate controls. A phone on the same trusted network opens the dedicated
+responsive Muse page, previews or replaces a JPEG, PNG, or WebP photograph,
+enters garment metadata, and uploads through the same secure streaming importer
+as local-device import. Muse then refreshes Wardrobe and opens the committed
+garment automatically.
+
+Phone import uses two server processes. The complete SPA and `/api/v1` API stay
+on `127.0.0.1`; a restricted listener binds one configured LAN interface and
+serves only the mobile build, safe session status, and one authorized upload.
+It exposes no clothing/outfit/Settings CRUD, media browser, readiness details,
+OpenAPI, filesystem paths, or privileged actions. CORS is not used as
+authentication, and no wildcard origin is enabled.
+
+Before creating or regenerating a session, the loopback API probes the
+restricted listener's exact configured bind address at `/listener-status` with
+a 500 ms timeout. The probe follows no redirect, performs no DNS lookup, sends
+no token, and requires the exact minimal JSON response. If the listener or its
+compiled mobile build is unavailable, creation fails safely before a token row
+is issued. Each active device status response repeats this bounded probe so the
+screen's network state describes listener reachability, not merely successful
+SQLite session creation. The listener revalidates its bounded Vite manifest and
+every allow-listed mobile asset for each readiness response, so deleting or
+corrupting a deployed build fails closed even after process startup.
+
+The kiosk uses versioned loopback routes under
+`/api/v1/phone-upload-sessions`. The LAN surface is limited to the safe
+`/listener-status` readiness response, `/u/`, locally compiled
+`/phone-assets/*`, `GET /phone-api/v1/session`, and
+`POST /phone-api/v1/upload`. Requests for the main `/api/v1` tree through the
+LAN listener remain unavailable.
+
+Each token has at least 256 bits of entropy. SQLite stores only its SHA-256
+digest. The QR URL places the raw token in the URL fragment, which is not sent
+in the HTTP request target or Referrer. Mobile code removes the fragment from
+visible history, retains the validated value only in origin-scoped
+`sessionStorage` for refresh recovery, and sends it as the
+`X-Muse-Upload-Token` authorization header. Terminal states clear it. The
+listener disables access logging, and ordinary device status never returns the
+secret. Completion, cancellation, expiry, or regeneration makes the token
+unusable. A safe failed attempt may be retried with the same token only while
+the server explicitly reports it retryable and the attempt and expiry limits
+remain. Transactional session
+claiming plus the existing import idempotency contract guarantees at most one
+committed garment per successful session. On restart, Muse checks that stable
+key before trusting a stale session state: if a garment already committed, even
+a concurrent visible failure, cancellation, or expiry is reconciled to
+`completed` instead of deleting or duplicating the garment.
+
+Session creation defaults to a ten-minute lifetime. Startup drains session
+recovery in repeated transactions of at most 100 mutations so every stale row
+is handled without an unbounded transaction. Each periodic or operator cleanup
+pass shares one 100-record budget across committed-import recovery, expiry,
+interrupted-claim recovery, terminal-row deletion, and abandoned temporary
+attempts. The main process checks at most every 300 seconds by default, and the
+restricted listener also removes one bounded stale-attempt batch when it
+starts. A `completed`, `cancelled`, or `expired` row is deleted only after it
+has remained unchanged for 24 hours. An uncommitted `failed` row first expires;
+no cleanup path removes a committed garment or registered image. Import,
+best-effort cutout processing, startup reconciliation, and cleanup all use the
+same cross-process gate, preventing cleanup from racing active temporary files
+while also bounding concurrent Pillow work.
+
+`MUSE_PHONE_UPLOAD_CLEANUP_BATCH_SIZE` bounds one cleanup pass. The listener's
+in-memory abuse guard is configured by
+`MUSE_PHONE_UPLOAD_RATE_LIMIT_REQUESTS`,
+`MUSE_PHONE_UPLOAD_RATE_LIMIT_WINDOW_SECONDS`, and
+`MUSE_PHONE_UPLOAD_RATE_LIMIT_CLIENTS`; it is not authentication and stores no
+persistent client profile. Session authorization remains the token.
+
+Muse supports JPEG, PNG, and WebP from phones. HEIC and HEIF are rejected with
+an actionable message rather than renamed or decoded partially. Although a
+third-party HEIF plugin publishes Python 3.13 Linux AArch64 artifacts, its
+complete Raspberry Pi resource, codec, and licensing profile has not passed
+target-hardware acceptance. The mobile camera picker requests a compatible
+representation where the browser supports it, but Muse does not claim that an
+iPhone will always convert an existing HEIC library photograph.
+
+The advertised URL may use a configured `muse.local` hostname when Raspberry Pi
+OS and the phone already have working mDNS, but this milestone does not install
+or reconfigure the device's mDNS service. The direct private IPv4 address is the
+deterministic fallback. Muse requires neither public DNS, an Internet tunnel, a
+cloud relay, nor an external QR service. The HTTP token is protected against
+guessing and replay but is not confidential from a malicious observer on the
+LAN; phone upload therefore assumes a trusted local network.
 
 Apply committed migrations and inspect their state with:
 
@@ -314,15 +446,36 @@ starting FastAPI as described below, run it in a second terminal with:
 ```bash
 cd frontend
 PLAYWRIGHT_BASE_URL=http://127.0.0.1:8000 npm run test:e2e:production
+PLAYWRIGHT_BASE_URL=http://127.0.0.1:8000 \
+PLAYWRIGHT_PHONE_UPLOAD_BASE_URL=http://127.0.0.1:8787 \
+MUSE_BACKEND_EXECUTABLE=/absolute/path/to/backend/.venv/bin/muse-backend \
+MUSE_MAIN_PID_FILE=/tmp/muse-phone-main.pid \
+MUSE_PHONE_PID_FILE=/tmp/muse-phone-upload.pid \
+MUSE_PHONE_E2E_DATA_ROOT=/tmp/muse-phone-e2e \
+npm run test:e2e:production:p4
 ```
 
-This runs the garment import/edit/delete flow and the P5 outfit flow. The latter
-imports local garments, creates overlapping placements, transforms and layers
-them, verifies the generated `600 × 750` preview and approved three-column
-grid, reloads, updates, saves as new, deletes, and checks local-only requests and
-`1280 × 800` horizontal overflow. To run only that check, use
+The first command runs the local garment import/edit/delete flow and the P5
+outfit flow. The P4 command additionally requires the restricted listener and
+uses separate device and phone browser contexts to decode the QR, upload a real
+image, observe automatic completion, restart both disposable test processes,
+verify persistence, and reject replay after restart. CI supplies the backend
+executable and PID-file paths to the Playwright harness; the harness sends local
+process signals and relaunches the two documented CLI commands against the same
+dedicated, initially empty temporary data root. It never reuses the P1/P5 smoke
+database. Muse exposes no restart or privileged test endpoint. The P5 scenario
+imports local garments, creates overlapping placements, transforms
+and layers them, verifies the generated `600 × 750` preview and approved
+three-column grid, reloads, updates, saves as new, deletes, and checks local-only
+requests and `1280 × 800` horizontal overflow. To run only that check, use
 `npm run test:e2e:production:p5` with the same `PLAYWRIGHT_BASE_URL`. Do not
-point either command at a personal wardrobe database.
+point any production E2E command at a personal wardrobe database.
+
+The two PID files must already contain the actual disposable listener process
+IDs and be writable by the test user; the harness rewrites them after restart.
+Use the production executable path selected for the test environment (`venv`
+instead of `.venv` on the documented macOS workaround). The CI workflow is the
+canonical complete setup and creates owner-only PID and log files.
 
 ## Production build and startup
 
@@ -334,6 +487,10 @@ npm ci
 npm run build
 ```
 
+The build command emits the kiosk application to `frontend/dist` and the
+restricted phone page to `frontend/dist-phone`. Copy both immutable build
+outputs to the Pi; do not run Vite or install Node on the production device.
+
 Configure the Pi using `backend/.env.example` as a reference. A minimal local
 production configuration includes:
 
@@ -344,25 +501,67 @@ MUSE_SERVE_FRONTEND=true
 MUSE_FRONTEND_BUILD_PATH=/opt/muse/frontend/dist
 MUSE_TRUSTED_HOSTS=["127.0.0.1","localhost"]
 MUSE_ALLOWED_ORIGINS=[]
+MUSE_PHONE_UPLOAD_ENABLED=true
+MUSE_PHONE_UPLOAD_BIND_HOST=192.168.1.50
+MUSE_PHONE_UPLOAD_PORT=8001
+MUSE_PHONE_UPLOAD_ADVERTISED_HOST=muse.local
+MUSE_PHONE_UPLOAD_ADVERTISED_IPV4=192.168.1.50
+MUSE_PHONE_UPLOAD_TRUSTED_HOSTS=["muse.local","192.168.1.50"]
+MUSE_PHONE_UPLOAD_SESSION_TTL_SECONDS=600
+MUSE_PHONE_UPLOAD_MAX_ATTEMPTS=3
+MUSE_PHONE_UPLOAD_RECEIVE_TIMEOUT_SECONDS=120
+MUSE_PHONE_UPLOAD_CLEANUP_INTERVAL_SECONDS=300
+MUSE_PHONE_UPLOAD_RETENTION_SECONDS=86400
+MUSE_PHONE_UPLOAD_CLEANUP_BATCH_SIZE=100
+MUSE_PHONE_UPLOAD_RATE_LIMIT_REQUESTS=60
+MUSE_PHONE_UPLOAD_RATE_LIMIT_WINDOW_SECONDS=60
+MUSE_PHONE_UPLOAD_RATE_LIMIT_CLIENTS=256
+MUSE_PHONE_UPLOAD_FRONTEND_BUILD_PATH=/opt/muse/frontend/dist-phone
 ```
 
-Then install the locked Python environment, migrate, and start one local worker:
+Replace the example private address with the Pi's actual stable address. If
+`muse.local` is not resolvable from the target phone, leave the advertised host
+unset and use the direct-IP fallback. Never configure the main server with this
+LAN address.
+
+Then install the locked Python environment, migrate, and start the two
+single-worker listeners in separate terminals or supervised processes:
 
 ```bash
 cd /opt/muse/backend
 uv sync --locked --no-dev
 .venv/bin/muse-backend migrate
 .venv/bin/muse-backend serve --host 127.0.0.1 --port 8000
+.venv/bin/muse-backend serve-phone-upload
+```
+
+Readiness probes remain process-specific and intentionally disclose little on
+the LAN listener:
+
+```bash
+curl --fail --show-error http://127.0.0.1:8000/api/v1/health
+curl --fail --show-error http://127.0.0.1:8000/api/v1/readiness
+curl --fail --show-error http://192.168.1.50:8001/listener-status
+```
+
+Run one aggregate bounded cleanup pass for an operator check or later scheduled
+task. Its count includes reconciled, expired, and deleted session rows plus
+removed stale import attempts:
+
+```bash
+.venv/bin/muse-backend cleanup-phone-upload-sessions
 ```
 
 Production invokes the locked environment directly so `uv run` cannot sync the
 default development dependency group during device startup.
 
-FastAPI serves the compiled SPA and API from the same origin. Direct navigation
-to React routes receives `index.html`; unknown `/api/*` paths remain API 404s.
-The backend keeps health diagnostics available if the frontend build is missing,
-while readiness reports the missing build. Normal Raspberry Pi runtime needs
-Python, the locked environment, the compiled frontend, SQLite data, and Chromium;
+The main FastAPI process serves the compiled SPA and API from the same loopback
+origin. Direct navigation to React routes receives `index.html`; unknown
+`/api/*` paths remain API 404s. The restricted listener serves only
+`dist-phone` and its narrow upload contract. The backend keeps health
+diagnostics available if the main frontend is missing, while readiness reports
+the missing build. Normal Raspberry Pi runtime needs Python, the locked
+environment, both precompiled frontend directories, SQLite data, and Chromium;
 it does not need Node.js or Internet access.
 
 Run the target-hardware acceptance procedure in

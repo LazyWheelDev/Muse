@@ -9,11 +9,18 @@ API dependency.
 ```text
 Chromium kiosk
   └─ same-origin HTTP
-      └─ FastAPI (one Uvicorn worker)
+      └─ Main FastAPI listener (one Uvicorn worker, loopback only)
           ├─ /api/v1/*  -> application services -> SQLAlchemy -> SQLite
           ├─ bounded image worker -> local Pillow processing
           ├─ /assets/*  -> compiled frontend assets
           └─ /*         -> frontend index.html SPA fallback
+
+Phone on the trusted local network
+  └─ short-lived upload-session secret
+      └─ Restricted FastAPI listener (one Uvicorn worker, one LAN interface)
+          ├─ mobile upload page and its dedicated compiled assets
+          ├─ token-authorized session status
+          └─ one token-authorized streamed garment import
 
 Local data root
   ├─ muse.sqlite3
@@ -21,6 +28,7 @@ Local data root
   ├─ media/outfits/previews/
   ├─ tmp/uploads/<import-attempt>/
   ├─ tmp/previews/<preview-attempt>/
+  ├─ .locks/
   └─ backups/
 ```
 
@@ -28,6 +36,29 @@ In development, Vite serves the React application on `127.0.0.1:5173` and
 proxies `/api` to FastAPI on `127.0.0.1:8000`. Browser code still uses relative
 `/api/v1` URLs. In production, FastAPI serves the compiled frontend and API from
 one origin, so Chromium does not need Node.js or cross-origin configuration.
+
+Phone import deliberately does not bind this complete application to the LAN.
+Production keeps the main process on `127.0.0.1`; a second application factory
+binds a separate process to one configured private IPv4 address and port. That
+restricted application does not include clothing, outfit, Settings, media,
+main readiness, OpenAPI, or privileged-device routes. It serves only the
+dedicated mobile build, the minimal `/listener-status` response, safe
+upload-session status, and one streamed import endpoint.
+
+The main application creates, monitors, cancels, and regenerates phone-upload
+sessions through its loopback API. The initial response contains the one-time
+secret needed to construct the QR payload. Later device-status responses never
+return that secret. The mobile URL carries the secret in its URL fragment, so
+the browser does not send it in the HTTP request target, Host header, or
+Referrer. Mobile JavaScript validates it, removes it from visible history state,
+and retains it only in origin-scoped `sessionStorage` so a page refresh can
+recover. Terminal states clear the token. The restricted server disables access
+logging and never writes raw secrets or full QR URLs to application logs.
+
+Listener bind, advertised address, and retention values remain operator
+environment configuration for this milestone. P4.4 does not add privileged
+network controls, listener diagnostics, or QR-session creation to Settings; the
+consumer entry is Add Garment.
 
 ## Frontend
 
@@ -43,6 +74,26 @@ invalidation. Wardrobe selection and view context remain in validated URL
 parameters so Details and browser navigation can restore the exact context.
 Multipart upload progress uses the browser's local `XMLHttpRequest` progress
 events; normal JSON requests continue through the centralized fetch client.
+
+The Add Garment route first offers **Upload on this device** and **Upload from
+phone**. The original local form remains available behind the first choice. The
+phone view owns only the current device-facing session, polls at a bounded
+interval while it is non-terminal, and stops polling on completion,
+cancellation, expiry, or failure. Completion invalidates Wardrobe queries and
+navigates to the imported garment without a manual refresh.
+
+The phone experience is a separate small Vite entry emitted to `dist-phone`.
+It is responsive at a `390 × 844` reference viewport, uses only locally bundled
+fonts, icons, and scripts, and talks only to its listener origin. Browser upload
+progress is local UI state; durable session state remains in SQLite. Neither
+frontend embeds a production hostname. Building both `dist` and `dist-phone`
+requires Node during development or CI, but serving them on the Pi does not.
+
+The device build renders QR codes with `qrcode.react@4.2.0` (ISC, no runtime
+dependencies). `jsqr@1.4.0` (Apache-2.0) and `pngjs@7.0.0` (MIT) are development
+dependencies used only to decode the generated QR in the production E2E test;
+they do not ship in either browser bundle or on the Pi. No Python QR or HEIF
+decoder was added.
 
 The Outfit Builder uses one reducer-backed editor session above the route tree.
 The draft contains the outfit mode and identifier, name, placements, active
@@ -114,6 +165,47 @@ after the exact original, a normalized display derivative, a thumbnail, and the
 corresponding database rows are durable. Optional background cleanup continues
 through the bounded local worker and is observable through clothing responses.
 
+The loopback phone-session API creates and observes durable sessions without
+exposing token hashes. Creation and regeneration are the only responses that
+contain a newly generated raw secret as part of the device-facing upload URL;
+regeneration invalidates the old session before returning a replacement.
+Cancellation immediately prevents a new claim and never removes a garment that
+has already committed.
+
+The loopback routes are:
+
+- `POST /api/v1/phone-upload-sessions`;
+- `GET /api/v1/phone-upload-sessions/{session_id}`;
+- `DELETE /api/v1/phone-upload-sessions/{session_id}`; and
+- `POST /api/v1/phone-upload-sessions/{session_id}/regenerate`.
+
+The LAN contract is intentionally separate: `/listener-status` returns only
+safe listener readiness, `/u/` serves the mobile entry, `/phone-assets/*`
+serves only its compiled files,
+`GET /phone-api/v1/session` validates and reports the token-owned session, and
+`POST /phone-api/v1/upload` accepts one garment import. The raw token is sent in
+`X-Muse-Upload-Token`; no token is placed in an API path or query string.
+
+Session creation and regeneration fail closed unless the main loopback process
+can reach `/listener-status` on the exact configured bind IPv4 and port. This
+server-to-server probe has a 500 ms timeout, follows neither DNS nor redirects,
+sends no token, caps the response body, and accepts only the exact minimal JSON
+contract. Status reads repeat the bounded probe and expose only `ready` or
+`unavailable`; they do not reveal listener internals. The restricted process
+also refuses to become ready unless its current database migration, bounded
+Vite manifest, and every manifest-allow-listed mobile asset remain present.
+This validation is repeated by `/listener-status`, so a build removed or
+corrupted after startup fails closed before another session is issued.
+
+The LAN listener uses the same multipart parser, image validator, import
+coordinator, storage manifests, atomic promotion, database transaction, and
+background-processing queue as local-device import. Authorization wraps this
+pipeline; it does not create a second image-ingestion implementation. A
+transactional compare-and-set claims an eligible session before the request body
+is accepted. A stable internal idempotency key derived from the public session
+identifier closes the crash window between committing the garment and marking
+the session complete.
+
 The saved-outfit contract is:
 
 - `POST /api/v1/outfits` creates an outfit, its ordered placements, and its
@@ -139,6 +231,9 @@ The schema contains:
   thumbnail, and optional cutout variants;
 - saved outfits;
 - ordered outfit items with placement and layer data; and
+- short-lived phone-upload sessions containing a token digest, lifecycle
+  timestamps, bounded attempt count, safe error code, and optional committed
+  garment reference; and
 - typed application settings for later preference work.
 
 Garment category describes what an item is. Body zone describes where it is
@@ -171,6 +266,44 @@ validated at the API and recovered-session boundaries. Several different
 garments may overlap in the same body zone; adding the same garment again
 activates its existing placement instead of duplicating it.
 
+### Phone-upload session lifecycle
+
+The durable lifecycle is `pending`, `opened`, `uploading`, `processing`, then
+`completed`, with `failed`, `cancelled`, and `expired` alternatives. A `failed`
+session is retryable only while its attempt count and expiry permit it;
+`cancelled`, `expired`, and `completed` are terminal.
+At least 256 bits of entropy are generated for every raw token. SQLite stores
+only its lowercase SHA-256 digest. Tokens are single-use and remain invalid
+after completion, cancellation, expiry, or regeneration. A failed token can be
+claimed again only when its public status explicitly reports `retryable`.
+
+Opening a valid mobile page may transition `pending` to `opened`. An atomic
+SQLite compare-and-set claims one upload and increments its attempt count, so
+two phones can view the same page but at most one request can enter `uploading`.
+Once the stream has completed, the session becomes `processing` while the
+existing secure importer validates and persists it. A committed garment is
+associated before `completed` is published. Restart recovery checks the stable
+import idempotency key before trusting a stale status: an already committed
+import becomes `completed` even when a concurrent failure, cancellation, or
+expiry was recorded. An interrupted, uncommitted attempt returns to an allowed
+retry/failure state without creating another garment.
+
+Expiry and retention are configurable. Session cleanup scans indexed candidates
+in bounded batches. One periodic or operator pass shares a single batch budget
+across committed-import recovery, overdue `pending`, `opened`, or retryable
+`failed` expiry, interrupted-claim recovery, and deletion of only `completed`,
+`cancelled`, or `expired` rows older than the retention cutoff. A failed row
+must first expire. Startup reaches full consistency by repeating those bounded
+recovery transactions until a pass is not full; it never uses one unbounded
+transaction. The defaults are a 300-second coarse interval, 100-record batch,
+and 24-hour terminal retention. Every committed garment and registered image is
+retained. The import workflow, optional cutout worker, both listener startups,
+and periodic/operator cleanup own abandoned-attempt handling under the same
+cross-process gate. One aggregate periodic or operator budget is shared between
+session rows and stale attempt directories. Both recovery paths are idempotent,
+and periodic session work performs no row mutation when there is nothing to
+change, limiting SD-card churn.
+
 ### Deletion policy
 
 Clothing and outfits use soft deletion. Normal collection and detail queries do
@@ -185,9 +318,9 @@ and must first account for all outfit references.
 
 ## SQLite policy
 
-Muse runs one Uvicorn worker and uses short SQLAlchemy sessions and explicit
-transactions. Every connection enables foreign-key enforcement, a bounded busy
-timeout, WAL journaling, and `synchronous=FULL`. The stronger default prioritizes
+Each Muse listener runs one Uvicorn worker and uses short SQLAlchemy sessions
+and explicit transactions. Every connection enables foreign-key enforcement, a
+bounded busy timeout, WAL journaling, and `synchronous=FULL`. The stronger default prioritizes
 acknowledged-write durability on appliance storage; its latency must still be
 measured on the target SD card or NVMe device. WAL keeps normal reads responsive
 during writes.
@@ -224,6 +357,12 @@ transaction compensates only the generated paths named by that manifest.
 Startup reconciliation removes stale temporary attempts, preserves media for
 committed rows, compensates interrupted uncommitted promotions, and resets stale
 processing claims. It never broadly purges originals or soft-deleted media.
+
+Local-device and phone imports run in separate server processes but share one
+owner-only cross-process import gate beneath the data root. The gate bounds
+Pillow memory and CPU use and prevents startup reconciliation from deleting an
+attempt owned by the other listener. It is released automatically when a
+process exits, and its lock file is never deleted during normal cleanup.
 
 Outfit preview generation follows the same filesystem/database ownership model.
 Creating an outfit or changing its placements renders a `600 × 750` lossless
@@ -269,17 +408,30 @@ fabricate an empty frontend build or swallow API errors.
 ## Raspberry Pi operating model
 
 The target is Raspberry Pi OS 64-bit on ARM64 with Python 3.13. Production needs
-only the locked Python environment, the compiled frontend, SQLite data, Pillow,
+only the locked Python environment, both compiled frontends, SQLite data, Pillow,
 the pure-Python multipart parser, and Chromium in kiosk mode. Pillow publishes
 CPython 3.13 Linux ARM64 wheels with the required common image codecs. The Pi
 does not need Node.js, Redis, PostgreSQL, a task queue, a downloaded ML model, or
 a network connection for core wardrobe use.
 
-The service binds to loopback by default and is intended to run as one systemd
-service. A single worker avoids duplicate in-process work and SQLite write
-contention. Images are kept out of SQLite to limit database growth and memory
-pressure. Outfit collection queries aggregate placement counts in SQLite and
-reserve full garment/image hydration for detail reads.
+The main service binds to loopback and the upload service binds to one configured
+LAN interface. Each runs one Uvicorn worker. The deployment milestone will add
+and validate coordinated systemd units; migrations must complete before either
+process starts, and stopping or restarting the main service must coordinate with
+the upload listener. Images are kept out of SQLite to limit database growth and
+memory pressure. Outfit collection queries aggregate placement counts in
+SQLite and reserve full garment/image hydration for detail reads.
+
+An optional advertised hostname is configured separately. If it is itself an
+IPv4 literal, it must equal the listener's exact private bind address, just as
+the explicit advertised-IPv4 field must. That bound IPv4 is
+therefore the deterministic readable fallback. `muse.local` is supported when
+mDNS and Avahi are already available, but it is not required. The address
+inspection utility excludes loopback, link-local, Docker, VPN, and virtual
+interfaces; the production listener never substitutes a discovered address
+that differs from its explicit bind. Loopback is limited to CI or same-machine
+development and cannot advertise a LAN hostname or address. No public DNS,
+tunnel, cloud relay, or Internet connection is involved.
 
 On an Apple M4 development machine, a warmed 20-placement synthetic preview
 render measured a `0.2334 s` median and `0.2383 s` maximum across five runs and
@@ -290,11 +442,10 @@ remain acceptance work in `docs/raspberry-pi-validation.md`.
 
 ## Deferred capabilities
 
-The current vertical slice does not implement QR phone import, ML-backed
-background removal, automatic metadata detection, exact duplicate-outfit
+The current vertical slice does not implement ML-backed background removal,
+automatic metadata detection, exact duplicate-outfit
 detection, search, arbitrary filters, favorites, cloud synchronization,
-recommendations, or multi-user accounts. Phone QR import remains an intended
-later MVP milestone; a fullscreen or long-press Saved Outfit preview is an
-optional convenience. The other discovery and automation features remain
-optional or post-MVP. Later features must preserve the local API, migration,
-storage, and offline guarantees described here.
+recommendations, or multi-user accounts. A fullscreen or long-press Saved Outfit
+preview is an optional convenience. The other discovery and automation features
+remain optional or post-MVP. Later features must preserve the two-listener
+boundary, local API, migration, storage, and offline guarantees described here.

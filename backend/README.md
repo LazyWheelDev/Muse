@@ -1,8 +1,9 @@
 # Muse backend
 
 The Muse backend is a local FastAPI service for clothing metadata, saved outfits,
-SQLite persistence, and safe filesystem access. It is designed to run as one
-lightweight process on a Raspberry Pi 5 and has no mandatory cloud dependency.
+SQLite persistence, safe filesystem access, and short-lived phone-upload
+sessions. Production uses one loopback-only main process plus one deliberately
+restricted local-network process; neither has a mandatory cloud dependency.
 
 ## Stack and layout
 
@@ -25,6 +26,7 @@ src/muse_backend/
   schemas/       Pydantic API contracts
   services/      Transactional application rules and presenters
   storage/       Local path validation and atomic-file foundations
+  phone_upload/  Restricted LAN application, security, and static assets
 migrations/      Alembic environment and versioned revisions
 tests/           Unit and integration tests with isolated temporary data
 ```
@@ -52,45 +54,67 @@ Settings use the `MUSE_` prefix and are loaded from process environment variable
 or an optional `backend/.env`. Copy `.env.example` for local overrides. Paths may
 be absolute or relative; writable child paths resolve beneath `MUSE_DATA_ROOT`.
 
-| Variable                                   | Development default         | Purpose                                                 |
-| ------------------------------------------ | --------------------------- | ------------------------------------------------------- |
-| `MUSE_ENVIRONMENT`                         | `development`               | `development`, `testing`, or `production` safety policy |
-| `MUSE_DATA_ROOT`                           | `../local-data`             | Parent of every writable runtime path                   |
-| `MUSE_DATABASE_PATH`                       | `muse.sqlite3`              | SQLite file, relative to data root                      |
-| `MUSE_MEDIA_ROOT`                          | `media`                     | Parent for persistent local media                       |
-| `MUSE_TEMP_UPLOAD_ROOT`                    | `tmp/uploads`               | Private streaming/import-attempt staging                |
-| `MUSE_TEMP_PREVIEW_ROOT`                   | `tmp/previews`              | Private crash-recovery staging for outfit previews      |
-| `MUSE_ORIGINAL_IMAGE_ROOT`                 | `media/garments/original`   | Exact, immutable upload bytes                           |
-| `MUSE_PROCESSED_IMAGE_ROOT`                | `media/garments/processed`  | Browser-safe normalized WebP files                      |
-| `MUSE_THUMBNAIL_ROOT`                      | `media/garments/thumbnails` | Wardrobe grid thumbnails                                |
-| `MUSE_CUTOUT_IMAGE_ROOT`                   | `media/garments/cutouts`    | Optional best-effort cutouts                            |
-| `MUSE_OUTFIT_PREVIEW_ROOT`                 | `media/outfits/previews`    | Immutable generated outfit preview WebP files           |
-| `MUSE_BACKUP_ROOT`                         | `backups`                   | Reserved local backup location                          |
-| `MUSE_MAX_UPLOAD_SIZE_BYTES`               | `26214400`                  | Maximum source image bytes (25 MiB)                     |
-| `MUSE_MAX_IMPORT_OVERHEAD_BYTES`           | `65536`                     | Multipart metadata and framing allowance                |
-| `MUSE_UPLOAD_CHUNK_SIZE_BYTES`             | `262144`                    | Maximum parser work chunk                               |
-| `MUSE_MAX_IMAGE_PIXELS`                    | `24000000`                  | Maximum decoded source pixel count                      |
-| `MUSE_MAX_IMAGE_DIMENSION`                 | `12000`                     | Maximum source width or height                          |
-| `MUSE_NORMALIZED_IMAGE_MAX_DIMENSION`      | `1600`                      | Maximum normalized WebP side                            |
-| `MUSE_THUMBNAIL_MAX_DIMENSION`             | `384`                       | Maximum thumbnail side                                  |
-| `MUSE_NORMALIZED_WEBP_QUALITY`             | `85`                        | Normalized lossy WebP quality                           |
-| `MUSE_THUMBNAIL_WEBP_QUALITY`              | `80`                        | Thumbnail lossy WebP quality                            |
-| `MUSE_BACKGROUND_PROCESSING_ENABLED`       | `true`                      | Run the bounded optional cutout worker                  |
-| `MUSE_BACKGROUND_PROCESSING_MAX_ATTEMPTS`  | `2`                         | Retry ceiling for transient processor failures          |
-| `MUSE_BACKGROUND_WORKER_POLL_SECONDS`      | `0.5`                       | Durable queue poll interval                             |
-| `MUSE_BACKGROUND_SHUTDOWN_TIMEOUT_SECONDS` | `10.0`                      | Graceful worker join deadline                           |
-| `MUSE_MAX_API_BODY_SIZE_BYTES`             | `65536`                     | Non-import metadata body limit                          |
-| `MUSE_LOG_LEVEL`                           | `INFO`                      | Python log level                                        |
-| `MUSE_FRONTEND_BUILD_PATH`                 | `../frontend/dist`          | Existing Vite production build                          |
-| `MUSE_SERVE_FRONTEND`                      | `false`                     | Enable same-origin SPA serving                          |
-| `MUSE_TRUSTED_HOSTS`                       | local hosts                 | JSON list accepted by trusted-host middleware           |
-| `MUSE_ALLOWED_ORIGINS`                     | Vite local origins          | JSON list for deliberate development CORS access        |
+| Variable                                      | Development default         | Purpose                                                  |
+| --------------------------------------------- | --------------------------- | -------------------------------------------------------- |
+| `MUSE_ENVIRONMENT`                            | `development`               | `development`, `testing`, or `production` safety policy  |
+| `MUSE_DATA_ROOT`                              | `../local-data`             | Parent of every writable runtime path                    |
+| `MUSE_DATABASE_PATH`                          | `muse.sqlite3`              | SQLite file, relative to data root                       |
+| `MUSE_MEDIA_ROOT`                             | `media`                     | Parent for persistent local media                        |
+| `MUSE_TEMP_UPLOAD_ROOT`                       | `tmp/uploads`               | Private streaming/import-attempt staging                 |
+| `MUSE_TEMP_PREVIEW_ROOT`                      | `tmp/previews`              | Private crash-recovery staging for outfit previews       |
+| `MUSE_ORIGINAL_IMAGE_ROOT`                    | `media/garments/original`   | Exact, immutable upload bytes                            |
+| `MUSE_PROCESSED_IMAGE_ROOT`                   | `media/garments/processed`  | Browser-safe normalized WebP files                       |
+| `MUSE_THUMBNAIL_ROOT`                         | `media/garments/thumbnails` | Wardrobe grid thumbnails                                 |
+| `MUSE_CUTOUT_IMAGE_ROOT`                      | `media/garments/cutouts`    | Optional best-effort cutouts                             |
+| `MUSE_OUTFIT_PREVIEW_ROOT`                    | `media/outfits/previews`    | Immutable generated outfit preview WebP files            |
+| `MUSE_BACKUP_ROOT`                            | `backups`                   | Reserved local backup location                           |
+| `MUSE_LOCK_ROOT`                              | `.locks`                    | Cross-process import-admission locks                     |
+| `MUSE_MAX_UPLOAD_SIZE_BYTES`                  | `26214400`                  | Maximum source image bytes (25 MiB)                      |
+| `MUSE_MAX_IMPORT_OVERHEAD_BYTES`              | `65536`                     | Multipart metadata and framing allowance                 |
+| `MUSE_UPLOAD_CHUNK_SIZE_BYTES`                | `262144`                    | Maximum parser work chunk                                |
+| `MUSE_MAX_IMAGE_PIXELS`                       | `24000000`                  | Maximum decoded source pixel count                       |
+| `MUSE_MAX_IMAGE_DIMENSION`                    | `12000`                     | Maximum source width or height                           |
+| `MUSE_NORMALIZED_IMAGE_MAX_DIMENSION`         | `1600`                      | Maximum normalized WebP side                             |
+| `MUSE_THUMBNAIL_MAX_DIMENSION`                | `384`                       | Maximum thumbnail side                                   |
+| `MUSE_NORMALIZED_WEBP_QUALITY`                | `85`                        | Normalized lossy WebP quality                            |
+| `MUSE_THUMBNAIL_WEBP_QUALITY`                 | `80`                        | Thumbnail lossy WebP quality                             |
+| `MUSE_BACKGROUND_PROCESSING_ENABLED`          | `true`                      | Run the bounded optional cutout worker                   |
+| `MUSE_BACKGROUND_PROCESSING_MAX_ATTEMPTS`     | `2`                         | Retry ceiling for transient processor failures           |
+| `MUSE_BACKGROUND_WORKER_POLL_SECONDS`         | `0.5`                       | Durable queue poll interval                              |
+| `MUSE_BACKGROUND_SHUTDOWN_TIMEOUT_SECONDS`    | `10.0`                      | Graceful worker join deadline                            |
+| `MUSE_MAX_API_BODY_SIZE_BYTES`                | `65536`                     | Non-import metadata body limit                           |
+| `MUSE_LOG_LEVEL`                              | `INFO`                      | Python log level                                         |
+| `MUSE_FRONTEND_BUILD_PATH`                    | `../frontend/dist`          | Existing Vite production build                           |
+| `MUSE_SERVE_FRONTEND`                         | `false`                     | Enable same-origin SPA serving                           |
+| `MUSE_TRUSTED_HOSTS`                          | local hosts                 | JSON list accepted by trusted-host middleware            |
+| `MUSE_ALLOWED_ORIGINS`                        | Vite local origins          | JSON list for deliberate development CORS access         |
+| `MUSE_PHONE_UPLOAD_ENABLED`                   | `false`                     | Permit session creation and the restricted listener      |
+| `MUSE_PHONE_UPLOAD_BIND_HOST`                 | `127.0.0.1`                 | Exact IPv4 interface for the restricted listener         |
+| `MUSE_PHONE_UPLOAD_PORT`                      | `8787`                      | Restricted listener port                                 |
+| `MUSE_PHONE_UPLOAD_ADVERTISED_HOST`           | unset                       | Optional phone-resolvable hostname such as `muse.local`  |
+| `MUSE_PHONE_UPLOAD_ADVERTISED_IPV4`           | unset                       | Optional direct fallback equal to the exact bind address |
+| `MUSE_PHONE_UPLOAD_TRUSTED_HOSTS`             | local hosts                 | Exact accepted phone-listener Host values                |
+| `MUSE_PHONE_UPLOAD_FRONTEND_BUILD_PATH`       | `../frontend/dist-phone`    | Dedicated mobile Vite production build                   |
+| `MUSE_PHONE_UPLOAD_SESSION_TTL_SECONDS`       | `600`                       | One-time token lifetime                                  |
+| `MUSE_PHONE_UPLOAD_MAX_ATTEMPTS`              | `3`                         | Failed claim ceiling before a session is unusable        |
+| `MUSE_PHONE_UPLOAD_RECEIVE_TIMEOUT_SECONDS`   | `120`                       | Maximum request-body receive time                        |
+| `MUSE_PHONE_UPLOAD_CLEANUP_INTERVAL_SECONDS`  | `300`                       | Minimum bounded periodic cleanup interval                |
+| `MUSE_PHONE_UPLOAD_RETENTION_SECONDS`         | `86400`                     | Terminal session retention before deletion               |
+| `MUSE_PHONE_UPLOAD_CLEANUP_BATCH_SIZE`        | `100`                       | Maximum rows or stale attempts per aggregate pass        |
+| `MUSE_PHONE_UPLOAD_RATE_LIMIT_REQUESTS`       | `60`                        | Per-window in-memory request allowance                   |
+| `MUSE_PHONE_UPLOAD_RATE_LIMIT_WINDOW_SECONDS` | `60`                        | Abuse-control window                                     |
+| `MUSE_PHONE_UPLOAD_RATE_LIMIT_CLIENTS`        | `256`                       | Bounded in-memory client bucket count                    |
 
 Production and test environments reject a data root inside the repository.
 Configure an external production location such as `/var/lib/muse`. Startup
 creates configured directories with owner-only permissions; it does not migrate
 the database. Private runtime paths, public media, and the frontend build may not
-overlap.
+overlap. When phone upload is enabled, the bind address and every advertised
+host or address must appear exactly in `MUSE_PHONE_UPLOAD_TRUSTED_HOSTS`; wildcard
+phone hosts are rejected. An IPv4 literal in either advertised field must equal
+the exact bind address.
+A loopback listener is valid for CI and same-machine development but cannot
+advertise any LAN hostname or address.
 
 ## Commands
 
@@ -114,14 +138,30 @@ building the frontend:
 uv sync --locked --no-dev
 .venv/bin/muse-backend migrate
 .venv/bin/muse-backend serve --host 127.0.0.1 --port 8000
+.venv/bin/muse-backend serve-phone-upload
 ```
+
+Probe the main process at `/api/v1/health` and `/api/v1/readiness`. Probe the
+configured LAN origin at `/listener-status`; it returns only `{"status":"ok"}`
+and no database, storage, migration, or core API details. Readiness rechecks the
+bounded Vite manifest and all of its allow-listed assets, not only process
+liveness.
 
 Use the environment executable directly in production (including in systemd)
 so service startup never attempts to resolve or install development packages.
 
-The CLI intentionally starts one Uvicorn worker. Put Chromium on the same host
-and origin; do not expose the service to a LAN without adding an appropriate
-deployment security boundary.
+Each CLI server command intentionally starts one Uvicorn worker. Keep the main
+`serve` command on `127.0.0.1`; never bind its complete API to the LAN. Only
+`serve-phone-upload` may bind the configured private interface, and it starts a
+different application factory that has no core API router, media browser,
+OpenAPI, interactive docs, or SPA fallback.
+
+Run one aggregate bounded phone-session and interrupted-attempt cleanup pass
+when diagnosing retention or from a future scheduled service:
+
+```bash
+.venv/bin/muse-backend cleanup-phone-upload-sessions
+```
 
 Format and verify source:
 
@@ -178,22 +218,26 @@ new empty database to head. It preserves media intentionally. Always inspect
 
 The API is versioned below `/api/v1`.
 
-| Method and path                      | Purpose                                                      |
-| ------------------------------------ | ------------------------------------------------------------ |
-| `GET /api/v1/health`                 | Process liveness and backend version                         |
-| `GET /api/v1/readiness`              | Database, migrations, storage, and optional frontend checks  |
-| `POST /api/v1/clothing-items`        | Create clothing metadata without uploading an image          |
-| `POST /api/v1/clothing-items/import` | Stream, validate, persist, and enqueue one local photograph  |
-| `GET /api/v1/clothing-items`         | Page active items; optionally select `garment_category`      |
-| `GET /api/v1/clothing-items/{id}`    | Read one active item and its image metadata                  |
-| `PATCH /api/v1/clothing-items/{id}`  | Update validated clothing metadata                           |
-| `DELETE /api/v1/clothing-items/{id}` | Soft-delete clothing metadata                                |
-| `POST /api/v1/outfits`               | Create placements and a local preview transactionally        |
-| `GET /api/v1/outfits`                | Page through active outfits                                  |
-| `GET /api/v1/outfits/{id}`           | Read a complete outfit and garment reference states          |
-| `PATCH /api/v1/outfits/{id}`         | Replace/update an outfit and changed preview transactionally |
-| `DELETE /api/v1/outfits/{id}`        | Soft-delete an outfit                                        |
-| `GET /api/v1/media/{relative_path}`  | Read a validated local media path                            |
+| Method and path                                      | Purpose                                                      |
+| ---------------------------------------------------- | ------------------------------------------------------------ |
+| `GET /api/v1/health`                                 | Process liveness and backend version                         |
+| `GET /api/v1/readiness`                              | Database, migrations, storage, and optional frontend checks  |
+| `POST /api/v1/clothing-items`                        | Create clothing metadata without uploading an image          |
+| `POST /api/v1/clothing-items/import`                 | Stream, validate, persist, and enqueue one local photograph  |
+| `GET /api/v1/clothing-items`                         | Page active items; optionally select `garment_category`      |
+| `GET /api/v1/clothing-items/{id}`                    | Read one active item and its image metadata                  |
+| `PATCH /api/v1/clothing-items/{id}`                  | Update validated clothing metadata                           |
+| `DELETE /api/v1/clothing-items/{id}`                 | Soft-delete clothing metadata                                |
+| `POST /api/v1/phone-upload-sessions`                 | Create a short-lived phone-upload handoff                    |
+| `GET /api/v1/phone-upload-sessions/{id}`             | Read safe device-facing session state                        |
+| `DELETE /api/v1/phone-upload-sessions/{id}`          | Cancel and invalidate an uncommitted session                 |
+| `POST /api/v1/phone-upload-sessions/{id}/regenerate` | Invalidate and replace a session                             |
+| `POST /api/v1/outfits`                               | Create placements and a local preview transactionally        |
+| `GET /api/v1/outfits`                                | Page through active outfits                                  |
+| `GET /api/v1/outfits/{id}`                           | Read a complete outfit and garment reference states          |
+| `PATCH /api/v1/outfits/{id}`                         | Replace/update an outfit and changed preview transactionally |
+| `DELETE /api/v1/outfits/{id}`                        | Soft-delete an outfit                                        |
+| `GET /api/v1/media/{relative_path}`                  | Read a validated local media path                            |
 
 Collection responses use deterministic ordering plus bounded `limit` and
 non-negative `offset` query parameters. Expected failures use a stable JSON
@@ -206,6 +250,63 @@ committed garment. Metadata request bodies are limited by
 `MUSE_MAX_API_BODY_SIZE_BYTES`; import bodies instead use the image limit plus
 bounded multipart overhead. Public media is limited to approved image
 extensions beneath configured image/preview roots.
+
+## Phone-upload security boundary
+
+Phone upload is intentionally split across two application processes. The main
+loopback API creates, monitors, cancels, and regenerates sessions. The LAN
+application serves only the safe `/listener-status` response, `/u/`,
+allow-listed files under `/phone-assets/`, `GET /phone-api/v1/session`, and
+`POST /phone-api/v1/upload`. It has strict Host and same-origin checks, bounded
+bodies and receive time, security headers, in-memory abuse control, and no
+wildcard CORS. The session token remains the authorization secret; being on the
+LAN or passing CORS is not authentication.
+
+The loopback session API verifies real listener reachability before creating or
+regenerating a token. It connects directly to the configured bind IPv4 and
+port, requests only `/listener-status`, follows no redirect or DNS result, uses
+a 500 ms timeout, and accepts only the exact minimal JSON success response. A
+failed probe returns a safe retryable `503` without creating a session. Device
+status reads include the result of the same bounded probe; it is a process/build
+readiness signal, not a broad network diagnostic and never carries a token. The
+minimal status route revalidates the compiled index, bounded manifest, and
+every allow-listed asset so a build removed after startup fails closed.
+
+A new session receives 256 bits of random token entropy. SQLite stores only the
+SHA-256 digest. The initial device response is the only ordinary response that
+contains the QR URL; subsequent status responses never return the raw token.
+The URL places it after `#token=`, and mobile JavaScript removes that fragment
+from visible history before sending the value in `X-Muse-Upload-Token`. Server
+access logging is disabled for the LAN listener, and code must never log raw
+tokens, full QR URLs, image bytes, personal notes, or filesystem paths.
+
+The persistent lifecycle is `pending`, `opened`, `uploading`, `processing`, then
+`completed`, `failed`, `cancelled`, or `expired`. A transactional claim prevents
+two phones from uploading concurrently. A stable internal idempotency key wraps
+the existing import workflow so a retry or restart can discover an already
+committed garment instead of creating another. Completion, cancellation,
+expiry, and regeneration revoke the token. A failed attempt is retryable only
+when the safe response says so and the attempt and expiry ceilings remain.
+
+Local import, phone import, optional cutout processing, and every temporary-file
+reconciliation pass acquire the same cross-process gate. Session recovery first
+looks for an idempotently committed garment across stale failed, cancelled,
+expired, uploading, or processing states and publishes `completed` when one
+exists; otherwise it resets an interrupted claim to its safe failure or expiry
+state. Startup drains session work through repeated transactions, each capped
+by the configured batch size, and each listener removes one bounded stale-file
+batch. By default the main process checks cleanup every 300 seconds. One
+periodic or CLI pass shares one 100-record budget across committed recovery,
+expiry, interrupted-claim recovery, deletion of `completed`, `cancelled`, or
+`expired` rows unchanged for 24 hours, and abandoned attempt directories. A
+failed row must expire before retention deletion. Cleanup cannot race the
+cutout worker and never removes a committed garment or registered image. The
+CLI reports all processed rows and stale attempts, not only deletions.
+
+The mobile build supports JPEG, PNG, and WebP. HEIC and HEIF remain explicitly
+unsupported: Muse returns an actionable format error and never renames those
+bytes as JPEG. Adding a decoder requires a separately reviewed Python 3.13/Linux
+AArch64/offline dependency and physical Pi resource validation.
 
 ## Garment import and processing
 
@@ -341,3 +442,9 @@ If the build is missing, API health remains accessible, readiness reports the
 failure, and root UI requests receive an unavailable response. This makes a bad
 deployment diagnosable without masking it. Node.js is not required on the
 Raspberry Pi after the frontend has been built.
+
+Phone upload additionally requires the separate `frontend/dist-phone` build.
+The restricted listener serves only its manifest-allow-listed entry and hashed
+assets, with no directory listing or arbitrary filesystem access. Once `dist`
+and `dist-phone` are built in CI or on a development machine, both production
+processes are Python-only and continue to work without Node or Internet access.

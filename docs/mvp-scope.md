@@ -35,9 +35,11 @@ Muse should feel like a real consumer product rather than a technical prototype.
 - Background removal
 - Manual categorization
 
-Local-device import is implemented before the phone QR flow. Search, arbitrary
-filters, and favorites are not part of the current MVP; category navigation is
-the Wardrobe's only collection refinement.
+Local-device import was implemented before the completed phone QR flow. Phone
+upload is short-lived, single-use, and available only through a restricted
+listener on the trusted local network; the complete Muse API remains loopback
+only. Search, arbitrary filters, and favorites are not part of the current MVP;
+category navigation is the Wardrobe's only collection refinement.
 
 ## Storage
 
@@ -84,8 +86,8 @@ The MVP is considered successful if a user can:
 6. Relaunch Muse and recover all saved data.
 7. Experience the application through a polished touchscreen interface.
 
-Exact duplicate-outfit detection, automatic metadata detection, and a
-fullscreen or long-press Saved Outfit preview are optional extensions, not MVP
-completion gates. Local-device import precedes phone QR import. Background
-removal remains best-effort and local, with the original image as the mandatory
-fallback.
+Exact duplicate-outfit detection, automatic metadata detection, HEIC/HEIF
+decoding, and a fullscreen or long-press Saved Outfit preview are optional
+extensions, not MVP completion gates. Local-device import preceded phone QR
+import. Background removal remains best-effort and local, with the original
+image as the mandatory fallback.

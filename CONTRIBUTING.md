@@ -54,6 +54,40 @@ cd frontend
 npm run dev
 ```
 
+Use `npm run dev:mobile` or `npm run preview:mobile` only for isolated responsive
+styling. They do not emulate session authorization or the restricted LAN
+surface; functional phone work must use the listener below.
+
+Phone-upload changes must also exercise the real restricted listener rather
+than binding the main application to the LAN. Build both frontends and put the
+following common settings in the untracked `backend/.env` so the loopback main
+process and restricted process use the same disposable database:
+
+```dotenv
+MUSE_DATA_ROOT=/tmp/muse-phone-upload-dev
+MUSE_PHONE_UPLOAD_ENABLED=true
+MUSE_PHONE_UPLOAD_BIND_HOST=127.0.0.1
+MUSE_PHONE_UPLOAD_TRUSTED_HOSTS=["127.0.0.1","localhost"]
+MUSE_PHONE_UPLOAD_FRONTEND_BUILD_PATH=../frontend/dist-phone
+```
+
+Then migrate once and start the two processes separately:
+
+```bash
+cd frontend
+npm run build
+
+cd ../backend
+uv run muse-backend migrate
+uv run muse-backend serve --reload
+
+# Run from backend/ in another terminal with the same backend/.env.
+uv run muse-backend serve-phone-upload
+```
+
+The main server must remain on `127.0.0.1`. Use a configured private interface
+only for an intentional physical-phone test.
+
 The browser calls relative `/api/v1` paths. Vite proxies `/api` to FastAPI; do
 not add a hard-coded production host. Local API documentation is available at
 `http://127.0.0.1:8000/api/docs`.
@@ -107,17 +141,35 @@ another terminal:
 ```bash
 cd frontend
 PLAYWRIGHT_BASE_URL=http://127.0.0.1:8000 npm run test:e2e:production
+PLAYWRIGHT_BASE_URL=http://127.0.0.1:8000 \
+PLAYWRIGHT_PHONE_UPLOAD_BASE_URL=http://127.0.0.1:8787 \
+MUSE_BACKEND_EXECUTABLE=/absolute/path/to/backend/.venv/bin/muse-backend \
+MUSE_MAIN_PID_FILE=/tmp/muse-phone-main.pid \
+MUSE_PHONE_PID_FILE=/tmp/muse-phone-upload.pid \
+MUSE_PHONE_E2E_DATA_ROOT=/tmp/muse-phone-e2e \
+npm run test:e2e:production:p4
 ```
 
 The suite imports, edits, reloads, and soft-deletes its own garments, then
 builds, previews, updates, copies, and deletes its own outfits. Run only the P5
 cross-stack check with `npm run test:e2e:production:p5` under the same disposable
-host configuration. Never target an existing personal or production wardrobe.
+host configuration. The P4 command additionally requires the restricted
+listener configured against `dist-phone`; it decodes the QR in a phone-sized
+browser, tests the single-use network upload, and restarts both disposable
+processes before checking persistence and replay. CI provides the executable
+PID-file paths, and a dedicated empty data root; this harness uses local process
+control and must never be replaced by a privileged Muse API. Never target an
+existing personal or production wardrobe.
+
+For a local run, create owner-only PID files containing the actual disposable
+listener PIDs before invoking P4; the harness rewrites them after restart. The
+GitHub Actions workflow is the reference setup for all required variables,
+isolated migration, listener startup, cleanup, and failure diagnostics.
 
 Run both suites for cross-stack changes. GitHub Actions performs locked installs,
-all static checks and tests, a clean-database migration check, the frontend
-production build, shell Playwright tests, and a production same-origin smoke
-test through FastAPI.
+all static checks and tests, a clean-database migration check, both frontend
+production builds, shell Playwright tests, a same-origin main-app smoke test,
+and the restricted-listener phone workflow.
 
 ## Backend conventions
 
@@ -143,6 +195,24 @@ test through FastAPI.
 - Keep optional processing outside long SQLite transactions. Any change to the
   import manifest or reconciliation protocol requires injected-failure and
   restart tests.
+- Keep the full FastAPI application loopback-only. The LAN listener must use its
+  separate application factory and expose only its mobile page/assets, minimal
+  listener status, token-authorized status, and one token-authorized import.
+  Never include the main API router, media router, SPA fallback, readiness
+  details, OpenAPI, or interactive docs in that factory.
+- Generate phone-upload secrets with at least 256 bits of entropy, persist only
+  their digest, keep the raw value in the mobile URL fragment, and never log it
+  or a full QR URL. Ordinary status responses must not return it.
+- Treat browser traces, screenshots of live QR codes, videos, request headers,
+  and E2E state files as secret-bearing. The P4 harness must disable or redact
+  them, invalidate its session in teardown, and never place them in CI
+  diagnostics or the repository.
+- Reuse the existing streaming parser and `GarmentImportService` for phone
+  uploads. A session claim and stable internal idempotency key must guarantee at
+  most one committed garment across concurrency, retry, and restart.
+- Acquire the shared cross-process import gate for local import, phone import,
+  and upload-attempt reconciliation. Never delete its lock file. Cleanup must
+  be bounded, repeatable, and unable to remove committed garments or media.
 - Render outfit previews only through the preview coordinator. Generated files
   must use a new immutable name, private staging plus a durable manifest, atomic
   promotion, short database ownership transaction, and compensating cleanup.
@@ -227,6 +297,14 @@ and production environments and deliberately leaves media in place.
   or long-press preview are not reasons to expand the current screen.
 - Revoke every local image-preview object URL and keep multipart upload progress,
   cancellation, and structured errors in the centralized clothing client.
+- Keep the device-facing session in the existing typed client and TanStack Query
+  cache, with bounded polling stopped for completed, cancelled, or expired
+  sessions and slowed for a retryable failure. Keep mobile form and progress
+  state inside the separate phone entry; do not add a second global state
+  framework.
+- The phone page must be usable at `390 × 844`, use local assets only, and
+  accept only JPEG, PNG, and WebP. Reject HEIC/HEIF with an actionable message;
+  do not rename it or claim unsupported browser conversion.
 - Do not introduce a dark theme during the MVP.
 
 ## Scope discipline

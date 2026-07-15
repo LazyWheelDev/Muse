@@ -88,11 +88,19 @@ Wardrobe
     ↓
 Add Garment
     ↓
-Upload from Device
+Choose Import Method
+
+• Upload on this device
+• Upload from phone
 ```
 
-Phone upload through a QR code remains part of the intended final MVP, but it is
-implemented after the complete local-device flow.
+The local-device choice opens the established image and metadata form. The
+phone choice creates a short-lived local session and displays its QR code,
+readable network URL, expiry countdown, cancel, and regenerate controls.
+Creation occurs only after a short loopback-side reachability check confirms
+that the restricted LAN listener and compiled phone page are ready. If that
+check fails, Muse shows a retryable local-network unavailable state and does
+not issue a token.
 
 Then:
 
@@ -115,6 +123,35 @@ Garment Appears in Wardrobe
 ```
 
 If image processing fails, the user must still be able to save the garment using the original image.
+
+The phone branch is:
+
+```text
+Generate Local Session
+    ↓
+Scan QR Code on Phone
+    ↓
+Open Responsive Muse Page
+    ↓
+Select or Capture JPEG, PNG, or WebP
+    ↓
+Preview + Enter Required Metadata
+    ↓
+Upload through Secure Streaming Import
+    ↓
+Muse Shows Receiving then Processing
+    ↓
+Import Complete
+    ↓
+Wardrobe Refreshes and Opens Garment
+```
+
+The phone and Muse must remain on the same trusted local network. The mobile
+page shows clear expired, already-used, cancelled, unavailable, unsupported
+format, and retryable-failure states. Cancelling or generating a new code makes
+the previous token unusable. A completed token cannot import another garment.
+No cloud relay, public DNS, account, Internet connection, or external QR service
+is involved.
 
 ---
 
