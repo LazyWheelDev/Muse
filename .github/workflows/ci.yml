@@ -22,6 +22,21 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Reject tracked runtime and test artifacts
+        shell: bash
+        run: |
+          found=0
+          while IFS= read -r -d '' path; do
+            [[ -e "$path" ]] || continue
+            case "/${path}" in
+              */.coverage*|*.db|*.db-journal|*.db-shm|*.db-wal|*.sqlite|*.sqlite-journal|*.sqlite-shm|*.sqlite-wal|*.sqlite3|*.sqlite3-journal|*.sqlite3-shm|*.sqlite3-wal|*/node_modules/*|*/.venv/*|*/venv/*|*/__pycache__/*|*/.pytest_cache/*|*/.mypy_cache/*|*/.ruff_cache/*|*/local-data/*|*/test-results/*|*/playwright-report/*)
+                printf 'Tracked generated artifact: %s\n' "$path"
+                found=1
+                ;;
+            esac
+          done < <(git ls-files -z)
+          test "$found" -eq 0
+
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
         with:
@@ -35,6 +50,15 @@ jobs:
       - name: Install locked backend dependencies
         working-directory: backend
         run: uv sync --locked --all-groups
+
+      - name: Install production-only backend environment
+        working-directory: backend
+        env:
+          UV_PROJECT_ENVIRONMENT: ${{ runner.temp }}/muse-production-venv
+        run: uv sync --locked --no-dev
+
+      - name: Verify production backend entry point
+        run: ${{ runner.temp }}/muse-production-venv/bin/muse-backend --help
 
       - name: Check backend formatting
         working-directory: backend
@@ -92,7 +116,7 @@ jobs:
           npx prettier --check
           ../README.md
           ../CONTRIBUTING.md
-          ../docs/architecture.md
+          "../docs/**/*.md"
           ../backend/README.md
           ../.github/workflows/ci.yml
 
@@ -120,7 +144,7 @@ jobs:
           MUSE_SERVE_FRONTEND: "true"
           MUSE_FRONTEND_BUILD_PATH: ${{ github.workspace }}/frontend/dist
           MUSE_ALLOWED_ORIGINS: "[]"
-        run: uv run muse-backend migrate
+        run: ${{ runner.temp }}/muse-production-venv/bin/muse-backend migrate
 
       - name: Start same-origin production smoke server
         working-directory: backend
@@ -131,7 +155,7 @@ jobs:
           MUSE_FRONTEND_BUILD_PATH: ${{ github.workspace }}/frontend/dist
           MUSE_ALLOWED_ORIGINS: "[]"
         run: |
-          uv run muse-backend serve --host 127.0.0.1 --port 8000 > "${RUNNER_TEMP}/muse-backend.log" 2>&1 &
+          "${RUNNER_TEMP}/muse-production-venv/bin/muse-backend" serve --host 127.0.0.1 --port 8000 > "${RUNNER_TEMP}/muse-backend.log" 2>&1 &
           echo $! > "${RUNNER_TEMP}/muse-backend.pid"
 
       - name: Verify backend health and readiness
