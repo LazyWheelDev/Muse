@@ -25,6 +25,7 @@ from muse_backend.services.background_processing import (
     BackgroundProcessingWorker,
     reconcile_interrupted_imports,
 )
+from muse_backend.services.outfit_previews import reconcile_outfit_previews
 from muse_backend.storage.local import LocalStorageService
 
 logger = logging.getLogger(__name__)
@@ -71,6 +72,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             logger.warning("Background processing will wait for the database migration")
         if migrations_current:
             reconcile_interrupted_imports(
+                settings=active_settings,
+                storage=storage,
+                database=database,
+            )
+            reconcile_outfit_previews(
                 settings=active_settings,
                 storage=storage,
                 database=database,

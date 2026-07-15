@@ -204,5 +204,9 @@ class ClothingReferenceRead(ApiSchema):
     id: int
     name: str
     garment_category: GarmentCategory
+    default_body_zone: BodyZone | None
     deleted_at: datetime | None
     primary_image: ClothingImageRead | None
+    display_image: ClothingImageRead | None
+    thumbnail_image: ClothingImageRead | None
+    image_candidates: list[ClothingImageRead]

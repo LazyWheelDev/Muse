@@ -10,6 +10,10 @@ from muse_backend.schemas.clothing import (
     ClothingReferenceRead,
 )
 from muse_backend.schemas.outfit import OutfitDetail, OutfitItemRead, OutfitSummary
+from muse_backend.services.outfit_preview_renderer import (
+    OUTFIT_PREVIEW_HEIGHT,
+    OUTFIT_PREVIEW_WIDTH,
+)
 
 
 def _media_url(relative_path: str) -> str:
@@ -131,12 +135,27 @@ def clothing_detail(item: ClothingItem) -> ClothingItemDetail:
 
 def clothing_reference(item: ClothingItem) -> ClothingReferenceRead:
     primary = next((image for image in item.images if image.is_primary), None)
+    primary_group = _primary_group(item)
+    image_candidates = (
+        [
+            image
+            for image in primary_group.images
+            if image.image_kind in {"cutout", "normalized", "original"}
+        ]
+        if primary_group is not None
+        else []
+    )
+    display = image_candidates[0] if image_candidates else None
     return ClothingReferenceRead(
         id=item.id,
         name=item.name,
         garment_category=item.garment_category,
+        default_body_zone=item.default_body_zone,
         deleted_at=item.deleted_at,
         primary_image=clothing_image_read(primary) if primary is not None else None,
+        display_image=display,
+        thumbnail_image=(primary_group.thumbnail_image if primary_group is not None else display),
+        image_candidates=image_candidates,
     )
 
 
@@ -159,13 +178,15 @@ def outfit_item_read(item: OutfitItem) -> OutfitItemRead:
 
 
 def outfit_summary(outfit: Outfit, *, item_count: int | None = None) -> OutfitSummary:
+    preview_image_path = outfit.preview_image_path
+    has_preview = preview_image_path is not None
     return OutfitSummary(
         id=outfit.id,
         name=outfit.name,
         item_count=len(outfit.items) if item_count is None else item_count,
-        preview_url=(
-            _media_url(outfit.preview_image_path) if outfit.preview_image_path is not None else None
-        ),
+        preview_url=_media_url(preview_image_path) if preview_image_path is not None else None,
+        preview_width=OUTFIT_PREVIEW_WIDTH if has_preview else None,
+        preview_height=OUTFIT_PREVIEW_HEIGHT if has_preview else None,
         created_at=outfit.created_at,
         updated_at=outfit.updated_at,
     )

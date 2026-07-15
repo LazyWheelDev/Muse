@@ -59,11 +59,12 @@ be absolute or relative; writable child paths resolve beneath `MUSE_DATA_ROOT`.
 | `MUSE_DATABASE_PATH`                       | `muse.sqlite3`              | SQLite file, relative to data root                      |
 | `MUSE_MEDIA_ROOT`                          | `media`                     | Parent for persistent local media                       |
 | `MUSE_TEMP_UPLOAD_ROOT`                    | `tmp/uploads`               | Private streaming/import-attempt staging                |
+| `MUSE_TEMP_PREVIEW_ROOT`                   | `tmp/previews`              | Private crash-recovery staging for outfit previews      |
 | `MUSE_ORIGINAL_IMAGE_ROOT`                 | `media/garments/original`   | Exact, immutable upload bytes                           |
 | `MUSE_PROCESSED_IMAGE_ROOT`                | `media/garments/processed`  | Browser-safe normalized WebP files                      |
 | `MUSE_THUMBNAIL_ROOT`                      | `media/garments/thumbnails` | Wardrobe grid thumbnails                                |
 | `MUSE_CUTOUT_IMAGE_ROOT`                   | `media/garments/cutouts`    | Optional best-effort cutouts                            |
-| `MUSE_OUTFIT_PREVIEW_ROOT`                 | `media/outfits/previews`    | Future rendered outfit previews                         |
+| `MUSE_OUTFIT_PREVIEW_ROOT`                 | `media/outfits/previews`    | Immutable generated outfit preview WebP files           |
 | `MUSE_BACKUP_ROOT`                         | `backups`                   | Reserved local backup location                          |
 | `MUSE_MAX_UPLOAD_SIZE_BYTES`               | `26214400`                  | Maximum source image bytes (25 MiB)                     |
 | `MUSE_MAX_IMPORT_OVERHEAD_BYTES`           | `65536`                     | Multipart metadata and framing allowance                |
@@ -177,22 +178,22 @@ new empty database to head. It preserves media intentionally. Always inspect
 
 The API is versioned below `/api/v1`.
 
-| Method and path                      | Purpose                                                     |
-| ------------------------------------ | ----------------------------------------------------------- |
-| `GET /api/v1/health`                 | Process liveness and backend version                        |
-| `GET /api/v1/readiness`              | Database, migrations, storage, and optional frontend checks |
-| `POST /api/v1/clothing-items`        | Create clothing metadata without uploading an image         |
-| `POST /api/v1/clothing-items/import` | Stream, validate, persist, and enqueue one local photograph |
-| `GET /api/v1/clothing-items`         | Page active items; optionally select `garment_category`     |
-| `GET /api/v1/clothing-items/{id}`    | Read one active item and its image metadata                 |
-| `PATCH /api/v1/clothing-items/{id}`  | Update validated clothing metadata                          |
-| `DELETE /api/v1/clothing-items/{id}` | Soft-delete clothing metadata                               |
-| `POST /api/v1/outfits`               | Create an outfit and placements transactionally             |
-| `GET /api/v1/outfits`                | Page through active outfits                                 |
-| `GET /api/v1/outfits/{id}`           | Read a complete outfit and garment reference states         |
-| `PATCH /api/v1/outfits/{id}`         | Replace/update an outfit transactionally                    |
-| `DELETE /api/v1/outfits/{id}`        | Soft-delete an outfit                                       |
-| `GET /api/v1/media/{relative_path}`  | Read a validated local media path                           |
+| Method and path                      | Purpose                                                      |
+| ------------------------------------ | ------------------------------------------------------------ |
+| `GET /api/v1/health`                 | Process liveness and backend version                         |
+| `GET /api/v1/readiness`              | Database, migrations, storage, and optional frontend checks  |
+| `POST /api/v1/clothing-items`        | Create clothing metadata without uploading an image          |
+| `POST /api/v1/clothing-items/import` | Stream, validate, persist, and enqueue one local photograph  |
+| `GET /api/v1/clothing-items`         | Page active items; optionally select `garment_category`      |
+| `GET /api/v1/clothing-items/{id}`    | Read one active item and its image metadata                  |
+| `PATCH /api/v1/clothing-items/{id}`  | Update validated clothing metadata                           |
+| `DELETE /api/v1/clothing-items/{id}` | Soft-delete clothing metadata                                |
+| `POST /api/v1/outfits`               | Create placements and a local preview transactionally        |
+| `GET /api/v1/outfits`                | Page through active outfits                                  |
+| `GET /api/v1/outfits/{id}`           | Read a complete outfit and garment reference states          |
+| `PATCH /api/v1/outfits/{id}`         | Replace/update an outfit and changed preview transactionally |
+| `DELETE /api/v1/outfits/{id}`        | Soft-delete an outfit                                        |
+| `GET /api/v1/media/{relative_path}`  | Read a validated local media path                            |
 
 Collection responses use deterministic ordering plus bounded `limit` and
 non-negative `offset` query parameters. Expected failures use a stable JSON
@@ -247,15 +248,44 @@ original is never removed because optional processing failed. SQLite uses
 foreign keys, WAL journaling, a busy timeout, and `synchronous=FULL` for this
 single-device durability profile.
 
+## Outfit preview generation
+
+Creating an outfit, or replacing its placements, generates a deterministic
+`600 x 750` lossless WebP preview locally. Rendering uses a logical `640 x 800`
+workspace, a bundled neutral mannequin drawn with Pillow, ascending layers from
+back to front, normalized center coordinates, proportional scale, and clockwise
+rotation around each garment center. Garment media is tried in the order
+`cutout`, `normalized`, then `original`; a bounded placeholder is rendered when
+every candidate is unavailable or invalid. No network request or external model
+is involved.
+
+Preview files use unique immutable names. Each is rendered in the private
+preview staging root, accompanied by a crash-recovery manifest, and atomically
+promoted before the short database transaction records ownership. A failed
+render, promotion, or database write leaves the previous outfit and preview
+unchanged. Successful placement changes delete the superseded file after commit;
+name-only and unchanged-placement updates reuse the existing preview. Soft
+deletion retains its preview. Startup reconciliation treats every outfit row,
+including soft-deleted rows, as authoritative and retries deferred cleanup of
+unregistered generated previews.
+
+Outfit summaries and details expose `preview_width` and `preview_height` when a
+preview path exists. Hydrated garment references retain the existing
+`primary_image` field and additionally expose `default_body_zone`,
+`display_image`, `thumbnail_image`, and ordered `image_candidates` so clients can
+perform the same local fallback without deriving filesystem paths.
+
 ### Performance validation
 
 Development-machine measurements on 2026-07-15 used an Apple M4 (`arm64`),
 Python 3.13.14, and local temporary storage. One synthetic 4000 x 3000 JPEG
 decoded, oriented, normalized to 1600 x 1200, and thumbnailed to 384 x 288 in
 0.142 seconds. A 24-item first page selected from 60 metadata-only garments had
-a 0.58 ms median and 2.55 ms maximum across 20 runs. These are repeatable
-development observations, not Raspberry Pi claims; real photographs compress
-and decode differently.
+a 0.58 ms median and 2.55 ms maximum across 20 runs. A deterministic preview
+containing 20 placements of one synthetic 800 x 1200 WebP had a 0.2334-second
+median and 0.2383-second maximum across five warmed runs, producing a 40,034-byte
+WebP. These are repeatable development observations, not Raspberry Pi claims;
+real photographs compress and decode differently.
 
 Before a device release, repeat the following on the target Raspberry Pi 5:
 
@@ -272,7 +302,9 @@ Before a device release, repeat the following on the target Raspberry Pi 5:
 5. Exercise at least 60 garments in carousel and grid views, checking that the
    UI requests thumbnails rather than every original and that Chromium remains
    responsive at 1280 x 800.
-6. Verify owner-only data permissions, available disk space, systemd shutdown,
+6. Save and update outfits with 1, 5, and 20 garments while recording preview
+   generation wall time, peak resident memory, temperature, and API latency.
+7. Verify owner-only data permissions, available disk space, systemd shutdown,
    and database/media consistency after a hard power-cycle test.
 
 Inspect and exercise the local contract at:

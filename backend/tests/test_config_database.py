@@ -72,6 +72,7 @@ def test_settings_reject_writable_or_media_paths_that_escape_their_roots(tmp_pat
     [
         ("database_path", Path("media/exposed.sqlite3")),
         ("temp_upload_root", Path("media/exposed-tmp")),
+        ("temp_preview_root", Path("media/exposed-previews")),
         ("backup_root", Path("media/exposed-backups")),
     ],
 )
@@ -84,7 +85,7 @@ def test_settings_keep_private_storage_out_of_public_media(
         Settings.model_validate({"data_root": tmp_path / "data", field: value})
 
 
-@pytest.mark.parametrize("field", ["temp_upload_root", "backup_root"])
+@pytest.mark.parametrize("field", ["temp_upload_root", "temp_preview_root", "backup_root"])
 def test_settings_reject_private_directory_ancestors_of_media(
     tmp_path: Path,
     field: str,

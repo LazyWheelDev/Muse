@@ -35,7 +35,11 @@ class ClothingRepository:
     def get_many_any(self, item_ids: Collection[int]) -> dict[int, ClothingItem]:
         if not item_ids:
             return {}
-        statement = select(ClothingItem).where(ClothingItem.id.in_(item_ids))
+        statement = (
+            select(ClothingItem)
+            .where(ClothingItem.id.in_(item_ids))
+            .options(selectinload(ClothingItem.images))
+        )
         return {item.id: item for item in self.session.scalars(statement)}
 
     def list_active(

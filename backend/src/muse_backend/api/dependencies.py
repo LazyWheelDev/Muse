@@ -25,6 +25,12 @@ def get_storage(request: Request) -> LocalStorageService:
     return storage
 
 
+def get_database(request: Request) -> Database:
+    database: Database = request.app.state.database
+    return database
+
+
 SessionDependency = Annotated[Session, Depends(get_session)]
 SettingsDependency = Annotated[Settings, Depends(get_settings)]
 StorageDependency = Annotated[LocalStorageService, Depends(get_storage)]
+DatabaseDependency = Annotated[Database, Depends(get_database)]

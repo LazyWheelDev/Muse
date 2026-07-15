@@ -95,6 +95,9 @@ def test_storage_resolves_portable_nested_paths(settings: Settings) -> None:
     assert (
         storage.resolve_temp_path("batch/item.tmp") == settings.temp_upload_root / "batch/item.tmp"
     )
+    assert storage.resolve_preview_temp_path("batch/preview.webp") == (
+        settings.temp_preview_root / "batch/preview.webp"
+    )
 
 
 @pytest.mark.parametrize("extension", [".jpg", ".JPG", ".jpeg", ".png", ".webp"])
@@ -169,6 +172,43 @@ def test_atomic_promote_moves_regular_temp_file_without_overwriting(settings: Se
             final_relative_path="garments/original/caller-name.jpg",
         )
     assert invalid_name.value.code == "invalid_storage_filename"
+
+
+def test_preview_attempt_manifest_promotion_validation_and_cleanup(settings: Settings) -> None:
+    storage = LocalStorageService(settings)
+    storage.create_required_directories()
+    attempt_id = "a" * 32
+    attempt = storage.create_preview_attempt(attempt_id)
+    preview = attempt / "preview.webp"
+    preview.write_bytes(b"preview")
+    final_name = storage.generate_internal_filename(".webp")
+    final_relative_path = f"outfits/previews/{final_name}"
+
+    manifest = storage.write_preview_manifest(
+        attempt_id,
+        {
+            "version": 1,
+            "operation": "outfit_preview",
+            "final_paths": [final_relative_path],
+        },
+    )
+    destination = storage.atomic_promote_preview(
+        temp_relative_path=f"{attempt_id}/preview.webp",
+        final_relative_path=final_relative_path,
+    )
+
+    assert manifest.is_file()
+    assert destination == settings.outfit_preview_root / final_name
+    assert storage.validate_outfit_preview_location(final_relative_path) == destination
+    storage.delete_preview_temporary_tree(attempt_id)
+    assert not attempt.exists()
+
+    with pytest.raises(DomainValidationError) as outside:
+        storage.validate_outfit_preview_location(f"garments/processed/{final_name}")
+    assert outside.value.code == "invalid_preview_location"
+
+    with pytest.raises(DomainValidationError):
+        storage.create_preview_attempt("not-an-attempt")
 
 
 def test_atomic_promote_rejects_missing_or_symbolic_link_sources(settings: Settings) -> None:

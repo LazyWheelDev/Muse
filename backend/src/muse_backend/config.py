@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     database_path: Path = Path("muse.sqlite3")
     media_root: Path = Path("media")
     temp_upload_root: Path = Path("tmp/uploads")
+    temp_preview_root: Path = Path("tmp/previews")
     original_image_root: Path = Path("media/garments/original")
     processed_image_root: Path = Path("media/garments/processed")
     thumbnail_root: Path = Path("media/garments/thumbnails")
@@ -145,6 +146,7 @@ class Settings(BaseSettings):
         self.database_path = self._resolve_data_path(self.database_path)
         self.media_root = self._resolve_data_path(self.media_root)
         self.temp_upload_root = self._resolve_data_path(self.temp_upload_root)
+        self.temp_preview_root = self._resolve_data_path(self.temp_preview_root)
         self.original_image_root = self._resolve_data_path(self.original_image_root)
         self.processed_image_root = self._resolve_data_path(self.processed_image_root)
         self.thumbnail_root = self._resolve_data_path(self.thumbnail_root)
@@ -157,6 +159,7 @@ class Settings(BaseSettings):
             self.database_path,
             self.media_root,
             self.temp_upload_root,
+            self.temp_preview_root,
             self.original_image_root,
             self.processed_image_root,
             self.thumbnail_root,
@@ -182,11 +185,18 @@ class Settings(BaseSettings):
                 if _is_within(first, second) or _is_within(second, first):
                     raise ValueError("image and preview directories must not overlap")
 
-        storage_directories = (self.media_root, self.temp_upload_root, self.backup_root)
+        storage_directories = (
+            self.media_root,
+            self.temp_upload_root,
+            self.temp_preview_root,
+            self.backup_root,
+        )
         for index, first in enumerate(storage_directories):
             for second in storage_directories[index + 1 :]:
                 if _is_within(first, second) or _is_within(second, first):
-                    raise ValueError("media, temporary, and backup directories must not overlap")
+                    raise ValueError(
+                        "media, temporary, preview staging, and backup directories must not overlap"
+                    )
 
         for directory in storage_directories:
             if _is_within(self.database_path, directory) or _is_within(
@@ -225,6 +235,7 @@ class Settings(BaseSettings):
                     self.database_path.parent,
                     self.media_root,
                     self.temp_upload_root,
+                    self.temp_preview_root,
                     self.original_image_root,
                     self.processed_image_root,
                     self.thumbnail_root,

@@ -1,10 +1,15 @@
 from collections.abc import Collection
+from datetime import datetime
 
 from sqlalchemy.orm import Session
 
 from muse_backend.database.base import utc_now
 from muse_backend.database.models import Outfit, OutfitItem
-from muse_backend.domain.exceptions import DomainValidationError, ResourceNotFoundError
+from muse_backend.domain.exceptions import (
+    DomainValidationError,
+    ResourceConflictError,
+    ResourceNotFoundError,
+)
 from muse_backend.repositories.clothing import ClothingRepository
 from muse_backend.repositories.outfits import OutfitRepository
 from muse_backend.schemas.common import Page
@@ -17,6 +22,8 @@ from muse_backend.schemas.outfit import (
 )
 from muse_backend.services.presenters import outfit_detail, outfit_summary
 
+_PREVIEW_UNCHANGED = object()
+
 
 class OutfitService:
     def __init__(self, session: Session) -> None:
@@ -24,10 +31,15 @@ class OutfitService:
         self.repository = OutfitRepository(session)
         self.clothing_repository = ClothingRepository(session)
 
-    def create(self, payload: OutfitCreate) -> OutfitDetail:
+    def create(
+        self,
+        payload: OutfitCreate,
+        *,
+        preview_image_path: str | None = None,
+    ) -> OutfitDetail:
         with self.session.begin():
             self._validate_clothing(payload.items, retained_ids=frozenset())
-            outfit = Outfit(name=payload.name)
+            outfit = Outfit(name=payload.name, preview_image_path=preview_image_path)
             self.repository.add(outfit)
             for item_payload in payload.items:
                 self.session.add(self._new_item(outfit, item_payload))
@@ -52,11 +64,23 @@ class OutfitService:
             raise self._not_found()
         return outfit_detail(outfit)
 
-    def update(self, outfit_id: int, payload: OutfitUpdate) -> OutfitDetail:
+    def update(
+        self,
+        outfit_id: int,
+        payload: OutfitUpdate,
+        *,
+        preview_image_path: str | None | object = _PREVIEW_UNCHANGED,
+        expected_updated_at: datetime | None = None,
+    ) -> OutfitDetail:
         with self.session.begin():
             outfit = self.repository.get_active(outfit_id)
             if outfit is None:
                 raise self._not_found()
+            if expected_updated_at is not None and outfit.updated_at != expected_updated_at:
+                raise ResourceConflictError(
+                    code="outfit_update_conflict",
+                    message="This outfit changed while Muse was preparing its preview. Please retry.",
+                )
             retained_ids = frozenset(item.clothing_item_id for item in outfit.items)
 
             if "name" in payload.model_fields_set:
@@ -73,6 +97,8 @@ class OutfitService:
                     self._new_item(outfit, item_payload) for item_payload in item_payloads
                 ]
                 self.repository.replace_items(outfit, replacements)
+            if preview_image_path is not _PREVIEW_UNCHANGED:
+                outfit.preview_image_path = preview_image_path  # type: ignore[assignment]
             outfit.updated_at = utc_now()
 
         loaded = self.repository.get_active(outfit_id)

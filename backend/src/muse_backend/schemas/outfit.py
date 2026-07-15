@@ -90,6 +90,8 @@ class OutfitSummary(TimestampedSchema):
     name: str
     item_count: int = Field(ge=0)
     preview_url: str | None
+    preview_width: int | None
+    preview_height: int | None
 
 
 class OutfitDetail(OutfitSummary):

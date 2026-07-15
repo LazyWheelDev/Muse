@@ -59,6 +59,9 @@ class LocalStorageService:
     def resolve_temp_path(self, relative_path: str) -> Path:
         return self.resolve_beneath(self.settings.temp_upload_root, relative_path)
 
+    def resolve_preview_temp_path(self, relative_path: str) -> Path:
+        return self.resolve_beneath(self.settings.temp_preview_root, relative_path)
+
     @staticmethod
     def resolve_beneath(root: Path, relative_path: str) -> Path:
         try:
@@ -114,6 +117,32 @@ class LocalStorageService:
 
     def atomic_promote(self, *, temp_relative_path: str, final_relative_path: str) -> Path:
         source = self.resolve_temp_path(temp_relative_path)
+        return self._atomic_promote(
+            source_root=self.settings.temp_upload_root,
+            source=source,
+            final_relative_path=final_relative_path,
+        )
+
+    def atomic_promote_preview(
+        self,
+        *,
+        temp_relative_path: str,
+        final_relative_path: str,
+    ) -> Path:
+        source = self.resolve_preview_temp_path(temp_relative_path)
+        return self._atomic_promote(
+            source_root=self.settings.temp_preview_root,
+            source=source,
+            final_relative_path=final_relative_path,
+        )
+
+    def _atomic_promote(
+        self,
+        *,
+        source_root: Path,
+        source: Path,
+        final_relative_path: str,
+    ) -> Path:
         destination = self.resolve_media_path(final_relative_path)
         if not self.is_approved_image_path(destination):
             raise DomainValidationError(
@@ -132,10 +161,7 @@ class LocalStorageService:
             )
         try:
             with self._promotion_lock:
-                if (
-                    self._contains_symlink(self.settings.temp_upload_root, source)
-                    or not source.is_file()
-                ):
+                if self._contains_symlink(source_root, source) or not source.is_file():
                     raise OSError("temporary source is not a regular file")
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 if self._contains_symlink(
@@ -214,30 +240,82 @@ class LocalStorageService:
             raise StorageOperationError from error
 
     def delete_temporary_tree(self, attempt_id: str) -> None:
+        self._delete_temporary_tree(
+            root=self.settings.temp_upload_root,
+            attempt_id=attempt_id,
+            operation="import",
+        )
+
+    def create_preview_attempt(self, attempt_id: str) -> Path:
         if not _ATTEMPT_ID_PATTERN.fullmatch(attempt_id):
             raise DomainValidationError(
                 code="invalid_relative_path",
                 message="The supplied local media reference is invalid.",
             )
-        candidate = self.resolve_temp_path(attempt_id)
+        candidate = self.resolve_preview_temp_path(attempt_id)
+        try:
+            candidate.mkdir(mode=0o700, parents=False, exist_ok=False)
+            self._fsync_directory(self.settings.temp_preview_root)
+            return candidate
+        except OSError as error:
+            logger.exception("Could not create a Muse temporary preview directory")
+            raise StorageOperationError from error
+
+    def delete_preview_temporary_tree(self, attempt_id: str) -> None:
+        self._delete_temporary_tree(
+            root=self.settings.temp_preview_root,
+            attempt_id=attempt_id,
+            operation="preview",
+        )
+
+    def _delete_temporary_tree(self, *, root: Path, attempt_id: str, operation: str) -> None:
+        if not _ATTEMPT_ID_PATTERN.fullmatch(attempt_id):
+            raise DomainValidationError(
+                code="invalid_relative_path",
+                message="The supplied local media reference is invalid.",
+            )
+        candidate = self.resolve_beneath(root, attempt_id)
         try:
             if candidate.is_symlink():
                 candidate.unlink(missing_ok=True)
             elif candidate.exists():
                 shutil.rmtree(candidate)
-            if self.settings.temp_upload_root.is_dir():
-                self._fsync_directory(self.settings.temp_upload_root)
+            if root.is_dir():
+                self._fsync_directory(root)
         except OSError as error:
-            logger.exception("Could not delete a Muse temporary import directory")
+            logger.exception("Could not delete a Muse temporary %s directory", operation)
             raise StorageOperationError from error
 
     def write_import_manifest(self, attempt_id: str, payload: dict[str, object]) -> Path:
+        return self._write_manifest(
+            root=self.settings.temp_upload_root,
+            attempt_id=attempt_id,
+            payload=payload,
+            operation="import",
+        )
+
+    def write_preview_manifest(self, attempt_id: str, payload: dict[str, object]) -> Path:
+        return self._write_manifest(
+            root=self.settings.temp_preview_root,
+            attempt_id=attempt_id,
+            payload=payload,
+            operation="preview",
+        )
+
+    def _write_manifest(
+        self,
+        *,
+        root: Path,
+        attempt_id: str,
+        payload: dict[str, object],
+        operation: str,
+    ) -> Path:
         if not _ATTEMPT_ID_PATTERN.fullmatch(attempt_id):
             raise DomainValidationError(
                 code="invalid_relative_path",
                 message="The supplied local media reference is invalid.",
             )
-        attempt_directory = self.resolve_temp_path(attempt_id)
+        attempt_directory = self.resolve_beneath(root, attempt_id)
         destination = attempt_directory / "manifest.json"
         temporary = attempt_directory / "manifest.json.tmp"
         encoded = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
@@ -252,8 +330,29 @@ class LocalStorageService:
             return destination
         except OSError as error:
             temporary.unlink(missing_ok=True)
-            logger.exception("Could not persist a Muse import manifest")
+            logger.exception("Could not persist a Muse %s manifest", operation)
             raise StorageOperationError from error
+
+    def validate_outfit_preview_location(self, relative_path: str) -> Path:
+        candidate = self.resolve_media_path(relative_path)
+        try:
+            expected_root = self.settings.outfit_preview_root.resolve()
+            candidate.resolve(strict=False).relative_to(expected_root)
+        except (OSError, RuntimeError, ValueError) as error:
+            raise DomainValidationError(
+                code="invalid_preview_location",
+                message="The outfit preview is not stored in the expected local directory.",
+            ) from error
+        if (
+            self._contains_symlink(expected_root, candidate)
+            or not _INTERNAL_IMAGE_FILENAME_PATTERN.fullmatch(candidate.name)
+            or candidate.suffix.lower() != ".webp"
+        ):
+            raise DomainValidationError(
+                code="invalid_preview_location",
+                message="The outfit preview is not stored in the expected local directory.",
+            )
+        return candidate
 
     def delete_owned_media(self, relative_path: str) -> None:
         candidate = self.resolve_media_path(relative_path)
