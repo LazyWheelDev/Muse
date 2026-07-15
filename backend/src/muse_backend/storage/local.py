@@ -30,7 +30,7 @@ class LocalStorageService:
         self._probe_ttl_seconds = probe_ttl_seconds
         self._probe_lock = Lock()
         self._promotion_lock = Lock()
-        self._last_probe_at = 0.0
+        self._last_probe_at: float | None = None
         self._last_probe_result = False
 
     def create_required_directories(self) -> None:
@@ -290,7 +290,11 @@ class LocalStorageService:
     def writable(self, *, force: bool = False) -> bool:
         now = time.monotonic()
         with self._probe_lock:
-            if not force and now - self._last_probe_at < self._probe_ttl_seconds:
+            if (
+                not force
+                and self._last_probe_at is not None
+                and now - self._last_probe_at < self._probe_ttl_seconds
+            ):
                 return self._last_probe_result
             result = self._probe_directories()
             self._last_probe_at = now

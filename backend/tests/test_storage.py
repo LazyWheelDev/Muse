@@ -34,6 +34,17 @@ def test_storage_creates_required_directories_and_caches_successful_probe(
     assert storage.writable()
 
 
+def test_storage_first_write_probe_does_not_depend_on_system_uptime(
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("muse_backend.storage.local.time.monotonic", lambda: 1.0)
+    storage = LocalStorageService(settings, probe_ttl_seconds=300)
+    storage.create_required_directories()
+
+    assert storage.writable()
+
+
 def test_storage_initialization_wraps_filesystem_failure(settings: Settings) -> None:
     settings.data_root.parent.mkdir(parents=True, exist_ok=True)
     settings.data_root.write_text("not a directory", encoding="utf-8")
