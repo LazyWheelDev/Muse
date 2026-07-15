@@ -1,0 +1,1 @@
+Muse database migrations are managed by Alembic. Do not replace them with create_all().

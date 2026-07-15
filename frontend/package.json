@@ -9,6 +9,9 @@
     "npm": ">=11.16.0 <12"
   },
   "packageManager": "npm@11.16.0",
+  "allowScripts": {
+    "fsevents": false
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
@@ -20,7 +23,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "pretest:e2e": "npm run build",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:reuse-build": "playwright test",
+    "test:e2e:production": "playwright test e2e/production-integration.spec.ts"
   },
   "dependencies": {
     "@fontsource-variable/inter": "5.2.8",

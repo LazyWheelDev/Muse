@@ -10,7 +10,14 @@ const routeCases = [
 
 test('the Muse route shell fits the 1280 × 800 kiosk viewport without horizontal overflow', async ({
   page,
-}) => {
+}, testInfo) => {
+  const configuredBaseUrl = testInfo.project.use.baseURL;
+
+  if (typeof configuredBaseUrl !== 'string') {
+    throw new Error('Playwright requires a configured baseURL.');
+  }
+
+  const applicationOrigin = new URL(configuredBaseUrl).origin;
   const externalRequests: string[] = [];
   const consoleErrors: string[] = [];
   const pageErrors: string[] = [];
@@ -18,7 +25,7 @@ test('the Muse route shell fits the 1280 × 800 kiosk viewport without horizonta
   page.on('request', (request) => {
     const requestUrl = new URL(request.url());
 
-    if (requestUrl.origin !== 'http://127.0.0.1:4173') {
+    if (requestUrl.origin !== applicationOrigin) {
       externalRequests.push(request.url());
     }
   });

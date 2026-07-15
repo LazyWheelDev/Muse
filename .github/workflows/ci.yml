@@ -1,0 +1,175 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify application
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.11.28"
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - name: Install Python
+        run: uv python install 3.13
+
+      - name: Install locked backend dependencies
+        working-directory: backend
+        run: uv sync --locked --all-groups
+
+      - name: Check backend formatting
+        working-directory: backend
+        run: uv run ruff format --check .
+
+      - name: Lint backend
+        working-directory: backend
+        run: uv run ruff check .
+
+      - name: Type-check backend
+        working-directory: backend
+        run: uv run mypy src tests
+
+      - name: Test backend
+        working-directory: backend
+        run: uv run pytest
+
+      - name: Verify migrations from an empty database
+        working-directory: backend
+        env:
+          MUSE_ENVIRONMENT: testing
+          MUSE_DATA_ROOT: ${{ runner.temp }}/muse-migration-check
+          MUSE_SERVE_FRONTEND: "false"
+        run: |
+          uv run muse-backend migrate
+          uv run muse-backend migration-status
+          uv run muse-backend migration-check
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install locked frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Type-check frontend
+        working-directory: frontend
+        run: npm run typecheck
+
+      - name: Lint frontend
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Check frontend formatting
+        working-directory: frontend
+        run: npm run format:check
+
+      - name: Check repository documentation formatting
+        working-directory: frontend
+        run: >-
+          npx prettier --check
+          ../README.md
+          ../CONTRIBUTING.md
+          ../docs/architecture.md
+          ../backend/README.md
+          ../.github/workflows/ci.yml
+
+      - name: Test frontend
+        working-directory: frontend
+        run: npm run test
+
+      - name: Build production frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Install Playwright Chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Test frontend route shell
+        working-directory: frontend
+        run: npm run test:e2e:reuse-build
+
+      - name: Migrate production-smoke database
+        working-directory: backend
+        env:
+          MUSE_ENVIRONMENT: production
+          MUSE_DATA_ROOT: ${{ runner.temp }}/muse-production-smoke
+          MUSE_SERVE_FRONTEND: "true"
+          MUSE_FRONTEND_BUILD_PATH: ${{ github.workspace }}/frontend/dist
+          MUSE_ALLOWED_ORIGINS: "[]"
+        run: uv run muse-backend migrate
+
+      - name: Start same-origin production smoke server
+        working-directory: backend
+        env:
+          MUSE_ENVIRONMENT: production
+          MUSE_DATA_ROOT: ${{ runner.temp }}/muse-production-smoke
+          MUSE_SERVE_FRONTEND: "true"
+          MUSE_FRONTEND_BUILD_PATH: ${{ github.workspace }}/frontend/dist
+          MUSE_ALLOWED_ORIGINS: "[]"
+        run: |
+          uv run muse-backend serve --host 127.0.0.1 --port 8000 > "${RUNNER_TEMP}/muse-backend.log" 2>&1 &
+          echo $! > "${RUNNER_TEMP}/muse-backend.pid"
+
+      - name: Verify backend health and readiness
+        run: |
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8000/api/v1/health > /dev/null; then
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              cat "${RUNNER_TEMP}/muse-backend.log"
+              exit 1
+            fi
+            sleep 1
+          done
+          curl --fail --show-error http://127.0.0.1:8000/api/v1/health
+          curl --fail --show-error http://127.0.0.1:8000/api/v1/readiness
+
+      - name: Test same-origin production integration
+        working-directory: frontend
+        env:
+          PLAYWRIGHT_BASE_URL: http://127.0.0.1:8000
+        run: npm run test:e2e:production
+
+      - name: Stop production smoke server
+        if: always()
+        run: |
+          if [ -f "${RUNNER_TEMP}/muse-backend.pid" ]; then
+            kill "$(cat "${RUNNER_TEMP}/muse-backend.pid")" 2>/dev/null || true
+          fi
+
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-diagnostics
+          path: |
+            frontend/playwright-report
+            frontend/test-results/playwright
+            ${{ runner.temp }}/muse-backend.log
+          if-no-files-found: ignore
+          retention-days: 7

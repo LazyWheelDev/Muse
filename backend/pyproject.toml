@@ -1,0 +1,93 @@
+[build-system]
+requires = ["uv_build==0.11.28"]
+build-backend = "uv_build"
+
+[project]
+name = "muse-backend"
+version = "0.2.0"
+description = "Local FastAPI and SQLite backend for the Muse smart wardrobe."
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+license = "MIT"
+authors = [{ name = "LazyWheelDev" }]
+dependencies = [
+  "alembic==1.18.5",
+  "fastapi==0.139.0",
+  "pydantic==2.13.4",
+  "pydantic-settings==2.14.2",
+  "sqlalchemy==2.0.51",
+  "uvicorn==0.51.0",
+]
+
+[project.scripts]
+muse-backend = "muse_backend.cli:main"
+
+[dependency-groups]
+dev = [
+  "asgi-lifespan==2.1.0",
+  "httpx==0.28.1",
+  "mypy==2.3.0",
+  "pytest==9.1.1",
+  "pytest-asyncio==1.4.0",
+  "pytest-cov==7.1.0",
+  "ruff==0.15.21",
+]
+
+[tool.uv]
+required-version = "==0.11.28"
+required-environments = [
+  "sys_platform == 'linux' and platform_machine == 'aarch64' and python_version == '3.13'",
+]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["ASYNC", "B", "E4", "E7", "E9", "F", "I", "RUF", "SIM", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["B017"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+pretty = true
+show_error_codes = true
+show_error_context = true
+warn_unreachable = true
+plugins = ["pydantic.mypy"]
+mypy_path = "src"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = [
+  "--strict-config",
+  "--strict-markers",
+  "-ra",
+  "--cov=muse_backend",
+  "--cov-report=term-missing",
+  "--cov-fail-under=85",
+]
+asyncio_mode = "auto"
+markers = [
+  "unit: isolated unit test",
+  "integration: API, migration, or persistence integration test",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["muse_backend"]
+omit = ["src/muse_backend/cli.py"]
+
+[tool.coverage.report]
+exclude_also = [
+  "if TYPE_CHECKING:",
+  "if __name__ == .__main__.:",
+  "raise NotImplementedError",
+]
+show_missing = true
+
+[tool.uv.build-backend]
+module-name = "muse_backend"
+module-root = "src"

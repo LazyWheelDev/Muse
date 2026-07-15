@@ -1,9 +1,13 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const isCi = Boolean(process.env.CI);
+const previewBaseUrl = 'http://127.0.0.1:4173';
+const externalBaseUrl = process.env.PLAYWRIGHT_BASE_URL?.trim();
+const baseURL = externalBaseUrl || previewBaseUrl;
 
 export default defineConfig({
   testDir: './e2e',
+  ...(externalBaseUrl ? {} : { testIgnore: ['**/production-integration.spec.ts'] }),
   outputDir: 'test-results/playwright',
   fullyParallel: true,
   forbidOnly: isCi,
@@ -13,7 +17,7 @@ export default defineConfig({
     ? [['line'], ['html', { outputFolder: 'playwright-report', open: 'never' }]]
     : 'list',
   use: {
-    baseURL: 'http://127.0.0.1:4173',
+    baseURL,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
@@ -27,10 +31,14 @@ export default defineConfig({
       },
     },
   ],
-  webServer: {
-    command: 'npm run preview -- --host 127.0.0.1 --port 4173',
-    url: 'http://127.0.0.1:4173',
-    reuseExistingServer: false,
-    timeout: 120_000,
-  },
+  ...(externalBaseUrl
+    ? {}
+    : {
+        webServer: {
+          command: 'npm run preview -- --host 127.0.0.1 --port 4173',
+          url: previewBaseUrl,
+          reuseExistingServer: false,
+          timeout: 120_000,
+        },
+      }),
 });
