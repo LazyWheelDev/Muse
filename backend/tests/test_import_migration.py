@@ -19,6 +19,7 @@ pytestmark = pytest.mark.integration
 
 REVISION_1 = "20260715_0001"
 REVISION_2 = "20260715_0002"
+REVISION_3 = "20260715_0003"
 
 
 def _insert_legacy_clothing_item(connection: sa.Connection, name: str) -> int:
@@ -150,7 +151,6 @@ def test_import_migration_backfills_legacy_images_and_downgrades_without_row_los
 
         upgrade_database(settings, REVISION_2)
         assert migration_status(settings, database).current_revisions == (REVISION_2,)
-        check_migration_consistency(settings)
 
         inspector = inspect(database.engine)
         clothing_columns = {column["name"] for column in inspector.get_columns("clothing_items")}
@@ -254,7 +254,7 @@ def test_import_migration_installs_on_a_fresh_database(tmp_path: Path) -> None:
     upgrade_database(settings)
 
     assert migration_status(settings).is_current
-    assert migration_status(settings).current_revisions == (REVISION_2,)
+    assert migration_status(settings).current_revisions == (REVISION_3,)
     check_migration_consistency(settings)
 
 

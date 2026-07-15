@@ -40,6 +40,22 @@ class ImageProcessingState(StrEnum):
     FAILED = "failed"
 
 
+class PhoneUploadSessionStatus(StrEnum):
+    PENDING = "pending"
+    OPENED = "opened"
+    UPLOADING = "uploading"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    EXPIRED = "expired"
+
+
+class PhoneUploadListenerStatus(StrEnum):
+    READY = "ready"
+    UNAVAILABLE = "unavailable"
+
+
 CATEGORY_DEFAULT_BODY_ZONES = MappingProxyType(
     {
         GarmentCategory.HAT: BodyZone.HEAD,

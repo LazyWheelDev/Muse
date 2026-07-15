@@ -22,7 +22,12 @@ from muse_backend.database.base import utc_now
 from muse_backend.database.engine import Database
 from muse_backend.database.models import ClothingImage, ClothingItem
 from muse_backend.domain.enums import ImageKind, ImageProcessingState
-from muse_backend.domain.exceptions import DomainValidationError, StorageOperationError
+from muse_backend.domain.exceptions import (
+    DomainValidationError,
+    ResourceConflictError,
+    StorageOperationError,
+)
+from muse_backend.services.import_admission import InterprocessImportLock
 from muse_backend.storage.local import LocalStorageService
 
 logger = logging.getLogger(__name__)
@@ -314,6 +319,94 @@ def _audit_registered_media(
                 logger.warning("Unregistered generated media was retained: %s", relative_path)
 
 
+def _reconcile_temporary_import_attempts(
+    *,
+    settings: Settings,
+    storage: LocalStorageService,
+    registered_paths: set[str],
+    limit: int,
+) -> int:
+    """Remove at most ``limit`` stale import attempts while preserving owned media."""
+
+    processed = 0
+    try:
+        attempts = os.scandir(settings.temp_upload_root)
+    except OSError:
+        logger.exception("Could not enumerate temporary imports during reconciliation")
+        return 0
+    with attempts:
+        for entry in attempts:
+            if processed >= limit:
+                break
+            try:
+                is_directory = entry.is_dir(follow_symlinks=False)
+            except OSError:
+                continue
+            if not is_directory or _ATTEMPT_ID_PATTERN.fullmatch(entry.name) is None:
+                continue
+
+            processed += 1
+            attempt = Path(entry.path)
+            manifest_path = attempt / "manifest.json"
+            final_paths: list[str] = []
+            try:
+                if manifest_path.exists() or manifest_path.is_symlink():
+                    descriptor = os.open(
+                        manifest_path,
+                        os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+                    )
+                    with os.fdopen(descriptor, "rb") as handle:
+                        metadata = os.fstat(handle.fileno())
+                        if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > 64 * 1024:
+                            raise ValueError("manifest is not a bounded regular file")
+                        encoded = handle.read(64 * 1024 + 1)
+                    if len(encoded) > 64 * 1024:
+                        raise ValueError("manifest exceeds the reconciliation limit")
+                    payload = json.loads(encoded.decode("utf-8"))
+                    paths = payload.get("final_paths", []) if isinstance(payload, dict) else []
+                    if isinstance(paths, list) and all(isinstance(path, str) for path in paths):
+                        final_paths = paths
+            except (OSError, UnicodeDecodeError, ValueError):
+                logger.warning("Discarding a malformed temporary import manifest")
+            for relative_path in final_paths:
+                if relative_path in registered_paths:
+                    continue
+                try:
+                    storage.delete_owned_media(relative_path)
+                except Exception:
+                    logger.exception("Could not reconcile an uncommitted promoted media file")
+            try:
+                storage.delete_temporary_tree(entry.name)
+            except StorageOperationError:
+                logger.exception("Could not remove a stale temporary import directory")
+    return processed
+
+
+def reconcile_temporary_imports(
+    *,
+    settings: Settings,
+    storage: LocalStorageService,
+    database: Database,
+    limit: int,
+) -> int:
+    """Clean one bounded batch left by a terminated local or phone import process."""
+
+    if limit <= 0:
+        return 0
+    try:
+        with database.session() as session:
+            registered_paths = set(session.scalars(select(ClothingImage.relative_path)))
+    except SQLAlchemyError:
+        logger.warning("Skipping temporary import cleanup until the database migration is current")
+        return 0
+    return _reconcile_temporary_import_attempts(
+        settings=settings,
+        storage=storage,
+        registered_paths=registered_paths,
+        limit=limit,
+    )
+
+
 def reconcile_interrupted_imports(
     *,
     settings: Settings,
@@ -390,51 +483,12 @@ def reconcile_interrupted_imports(
         storage=storage,
         registered_images=registered_images,
     )
-
-    try:
-        attempts = list(settings.temp_upload_root.iterdir())
-    except OSError:
-        logger.exception("Could not enumerate temporary imports during reconciliation")
-        return
-    for attempt in attempts:
-        if (
-            not attempt.is_dir()
-            or attempt.is_symlink()
-            or _ATTEMPT_ID_PATTERN.fullmatch(attempt.name) is None
-        ):
-            continue
-        manifest_path = attempt / "manifest.json"
-        final_paths: list[str] = []
-        try:
-            if manifest_path.exists() or manifest_path.is_symlink():
-                descriptor = os.open(
-                    manifest_path,
-                    os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
-                )
-                with os.fdopen(descriptor, "rb") as handle:
-                    metadata = os.fstat(handle.fileno())
-                    if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > 64 * 1024:
-                        raise ValueError("manifest is not a bounded regular file")
-                    encoded = handle.read(64 * 1024 + 1)
-                if len(encoded) > 64 * 1024:
-                    raise ValueError("manifest exceeds the reconciliation limit")
-                payload = json.loads(encoded.decode("utf-8"))
-                paths = payload.get("final_paths", []) if isinstance(payload, dict) else []
-                if isinstance(paths, list) and all(isinstance(path, str) for path in paths):
-                    final_paths = paths
-        except (OSError, UnicodeDecodeError, ValueError):
-            logger.warning("Discarding a malformed temporary import manifest")
-        for relative_path in final_paths:
-            if relative_path in registered_paths:
-                continue
-            try:
-                storage.delete_owned_media(relative_path)
-            except Exception:
-                logger.exception("Could not reconcile an uncommitted promoted media file")
-        try:
-            storage.delete_temporary_tree(attempt.name)
-        except StorageOperationError:
-            logger.exception("Could not remove a stale temporary import directory")
+    _reconcile_temporary_import_attempts(
+        settings=settings,
+        storage=storage,
+        registered_paths=registered_paths,
+        limit=settings.phone_upload_cleanup_batch_size,
+    )
 
 
 class BackgroundProcessingWorker:
@@ -445,11 +499,13 @@ class BackgroundProcessingWorker:
         storage: LocalStorageService,
         database: Database,
         processor: BackgroundRemovalProcessor | None = None,
+        interprocess_lock: InterprocessImportLock | None = None,
     ) -> None:
         self.settings = settings
         self.storage = storage
         self.database = database
         self.processor = processor or ConservativeLocalBackgroundProcessor()
+        self.interprocess_lock = interprocess_lock or InterprocessImportLock(settings)
         self._stop = threading.Event()
         self._wake = threading.Event()
         self._thread: threading.Thread | None = None
@@ -485,12 +541,16 @@ class BackgroundProcessingWorker:
 
     def _run(self) -> None:
         while not self._stop.is_set():
-            item_id = self._claim_next()
+            try:
+                with self.interprocess_lock.acquire(blocking=False):
+                    item_id = self._claim_next()
+                    if item_id is not None:
+                        self._process_item(item_id)
+            except ResourceConflictError:
+                item_id = None
             if item_id is None:
                 self._wake.wait(self.settings.background_worker_poll_seconds)
                 self._wake.clear()
-                continue
-            self._process_item(item_id)
 
     def _claim_next(self) -> int | None:
         try:

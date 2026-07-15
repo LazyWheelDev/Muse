@@ -1,4 +1,5 @@
 import argparse
+import ipaddress
 import logging
 import sys
 from pathlib import Path
@@ -7,12 +8,17 @@ import uvicorn
 
 from muse_backend.application import create_app
 from muse_backend.config import Environment, Settings
+from muse_backend.database.engine import Database
 from muse_backend.database.migrations import (
     check_migration_consistency,
     migration_status,
     upgrade_database,
 )
 from muse_backend.domain.exceptions import MuseError
+from muse_backend.phone_upload.application import create_phone_upload_app
+from muse_backend.services.background_processing import reconcile_temporary_imports
+from muse_backend.services.import_admission import InterprocessImportLock
+from muse_backend.services.phone_upload_sessions import PhoneUploadSessionService
 from muse_backend.storage.local import LocalStorageService
 
 logger = logging.getLogger(__name__)
@@ -27,11 +33,20 @@ def _parser() -> argparse.ArgumentParser:
     serve.add_argument("--port", type=int, default=8000)
     serve.add_argument("--reload", action="store_true")
 
+    commands.add_parser(
+        "serve-phone-upload",
+        help="run the restricted phone-upload listener on its configured LAN interface",
+    )
+
     migrate = commands.add_parser("migrate", help="upgrade the configured database")
     migrate.add_argument("revision", nargs="?", default="head")
 
     commands.add_parser("migration-status", help="show current and expected revisions")
     commands.add_parser("migration-check", help="check models against the migration head")
+    commands.add_parser(
+        "cleanup-phone-upload-sessions",
+        help="reconcile and remove one bounded batch of retained phone-upload sessions",
+    )
 
     reset = commands.add_parser("reset-dev", help="reset only the configured development database")
     reset.add_argument(
@@ -67,6 +82,36 @@ def _reset_development_database(settings: Settings, *, confirmed: bool) -> None:
     upgrade_database(settings)
 
 
+def _is_loopback_host(host: str) -> bool:
+    if host.lower().removesuffix(".") == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _cleanup_phone_upload_sessions(settings: Settings) -> int:
+    storage = LocalStorageService(settings)
+    storage.create_required_directories()
+    storage.secure_database_file()
+    database = Database(settings.database_path)
+    try:
+        if not migration_status(settings, database).is_current:
+            raise RuntimeError("phone-upload cleanup requires a current database migration")
+        service = PhoneUploadSessionService(database=database, settings=settings)
+        with InterprocessImportLock(settings).acquire(blocking=True):
+            processed = service.cleanup()
+            return processed + reconcile_temporary_imports(
+                settings=settings,
+                storage=storage,
+                database=database,
+                limit=max(0, settings.phone_upload_cleanup_batch_size - processed),
+            )
+    finally:
+        database.dispose()
+
+
 def main() -> None:
     arguments = _parser().parse_args()
     settings = Settings()
@@ -74,6 +119,10 @@ def main() -> None:
 
     try:
         if arguments.command == "serve":
+            if settings.environment is Environment.PRODUCTION and not _is_loopback_host(
+                arguments.host
+            ):
+                raise RuntimeError("the production Muse application must bind to loopback")
             if arguments.reload:
                 if settings.environment is not Environment.DEVELOPMENT:
                     raise RuntimeError("--reload is available only in development")
@@ -84,6 +133,7 @@ def main() -> None:
                     reload=True,
                     workers=1,
                     log_level=settings.log_level.lower(),
+                    proxy_headers=False,
                 )
             else:
                 uvicorn.run(
@@ -92,7 +142,21 @@ def main() -> None:
                     port=arguments.port,
                     workers=1,
                     log_level=settings.log_level.lower(),
+                    proxy_headers=False,
                 )
+        elif arguments.command == "serve-phone-upload":
+            if not settings.phone_upload_enabled:
+                raise RuntimeError("the dedicated phone-upload listener is disabled")
+            uvicorn.run(
+                create_phone_upload_app(settings),
+                host=str(settings.phone_upload_bind_host),
+                port=settings.phone_upload_port,
+                workers=1,
+                log_level=settings.log_level.lower(),
+                access_log=False,
+                proxy_headers=False,
+                server_header=False,
+            )
         elif arguments.command == "migrate":
             upgrade_database(settings, arguments.revision)
         elif arguments.command == "migration-status":
@@ -103,6 +167,9 @@ def main() -> None:
                 raise RuntimeError("database migration is not current")
         elif arguments.command == "migration-check":
             check_migration_consistency(settings)
+        elif arguments.command == "cleanup-phone-upload-sessions":
+            processed = _cleanup_phone_upload_sessions(settings)
+            print(f"processed phone-upload cleanup records: {processed}")
         elif arguments.command == "reset-dev":
             _reset_development_database(settings, confirmed=arguments.confirm)
     except MuseError as error:

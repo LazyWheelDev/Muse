@@ -1,15 +1,9 @@
-import asyncio
 from typing import Annotated
 
 from fastapi import APIRouter, Header, Path, Query, Request, Response, status
-from pydantic import ValidationError
 
 from muse_backend.api.dependencies import SessionDependency, SettingsDependency, StorageDependency
 from muse_backend.domain.enums import GarmentCategory
-from muse_backend.domain.exceptions import (
-    DomainValidationError,
-    ResourceConflictError,
-)
 from muse_backend.schemas.clothing import (
     ClothingItemCreate,
     ClothingItemDetail,
@@ -18,8 +12,7 @@ from muse_backend.schemas.clothing import (
 )
 from muse_backend.schemas.common import MAX_PAGE_OFFSET, SQLITE_MAX_INTEGER, Page
 from muse_backend.services.clothing import ClothingService
-from muse_backend.services.imports import GarmentImportService
-from muse_backend.services.multipart_import import parse_import_request
+from muse_backend.services.garment_import_workflow import GarmentImportWorkflow
 
 router = APIRouter(prefix="/clothing-items", tags=["clothing"])
 ItemId = Annotated[int, Path(gt=0, le=SQLITE_MAX_INTEGER)]
@@ -74,54 +67,13 @@ async def import_clothing_item(
         ),
     ] = None,
 ) -> ClothingItemDetail:
-    import_lock: asyncio.Lock = request.app.state.import_lock
-    try:
-        await asyncio.wait_for(import_lock.acquire(), timeout=0.01)
-    except TimeoutError as error:
-        raise ResourceConflictError(
-            code="clothing_import_busy",
-            message="Muse is already processing another local garment import.",
-        ) from error
-    try:
-        parsed = await parse_import_request(request, storage=storage, settings=settings)
-        try:
-            metadata = ClothingItemCreate.model_validate(parsed.metadata)
-        except ValidationError as error:
-            storage.delete_temporary_tree(parsed.attempt_relative_path)
-            raise DomainValidationError(
-                code="invalid_import_metadata",
-                message="The garment information did not pass validation.",
-                details={
-                    "fields": [
-                        {
-                            "location": [str(part) for part in issue["loc"]],
-                            "message": issue["msg"],
-                            "type": issue["type"],
-                        }
-                        for issue in error.errors()
-                    ]
-                },
-            ) from error
-        service = GarmentImportService(
-            settings=settings,
-            storage=storage,
-            database=request.app.state.database,
-        )
-        import_task = asyncio.create_task(
-            asyncio.to_thread(
-                service.import_item,
-                parsed,
-                metadata,
-                idempotency_key=idempotency_key,
-            )
-        )
-        try:
-            result = await asyncio.shield(import_task)
-        except asyncio.CancelledError:
-            await import_task
-            raise
-    finally:
-        import_lock.release()
+    workflow = GarmentImportWorkflow(
+        settings=settings,
+        storage=storage,
+        database=request.app.state.database,
+        admission=request.app.state.import_admission,
+    )
+    result = await workflow.run(request, idempotency_key=idempotency_key)
     response.headers["Location"] = f"/api/v1/clothing-items/{result.item.id}"
     response.headers["Idempotency-Replayed"] = "true" if result.replayed else "false"
     worker = getattr(request.app.state, "background_worker", None)

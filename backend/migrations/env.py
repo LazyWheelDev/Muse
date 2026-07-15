@@ -12,6 +12,7 @@ from muse_backend.database.models import (  # noqa: F401
     ClothingItem,
     Outfit,
     OutfitItem,
+    PhoneUploadSession,
 )
 
 config = context.config

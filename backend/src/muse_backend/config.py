@@ -1,4 +1,5 @@
 from enum import StrEnum
+from ipaddress import IPv4Address
 from pathlib import Path
 from typing import Self
 from urllib.parse import urlsplit
@@ -22,6 +23,10 @@ def _default_data_root() -> Path:
 
 def _default_frontend_build_path() -> Path:
     return REPOSITORY_ROOT / "frontend" / "dist"
+
+
+def _default_phone_frontend_build_path() -> Path:
+    return REPOSITORY_ROOT / "frontend" / "dist-phone"
 
 
 def _is_within(path: Path, root: Path) -> bool:
@@ -53,6 +58,7 @@ class Settings(BaseSettings):
     cutout_image_root: Path = Path("media/garments/cutouts")
     outfit_preview_root: Path = Path("media/outfits/previews")
     backup_root: Path = Path("backups")
+    lock_root: Path = Path(".locks")
     max_upload_size_bytes: int = Field(default=25 * 1024 * 1024, ge=1024, le=500 * 1024 * 1024)
     max_import_overhead_bytes: int = Field(default=64 * 1024, ge=4096, le=1024 * 1024)
     upload_chunk_size_bytes: int = Field(default=256 * 1024, ge=16 * 1024, le=1024 * 1024)
@@ -76,6 +82,26 @@ class Settings(BaseSettings):
     allowed_origins: list[str] = Field(
         default_factory=lambda: ["http://127.0.0.1:5173", "http://localhost:5173"]
     )
+    phone_upload_enabled: bool = False
+    phone_upload_bind_host: IPv4Address = IPv4Address("127.0.0.1")
+    phone_upload_port: int = Field(default=8787, ge=1, le=65_535)
+    phone_upload_advertised_host: str | None = None
+    phone_upload_advertised_ipv4: IPv4Address | None = None
+    phone_upload_trusted_hosts: list[str] = Field(
+        default_factory=lambda: ["127.0.0.1", "localhost", "testserver"]
+    )
+    phone_upload_frontend_build_path: Path = Field(
+        default_factory=_default_phone_frontend_build_path
+    )
+    phone_upload_session_ttl_seconds: int = Field(default=600, ge=60, le=3600)
+    phone_upload_max_attempts: int = Field(default=3, ge=1, le=10)
+    phone_upload_receive_timeout_seconds: float = Field(default=120.0, ge=5.0, le=600.0)
+    phone_upload_cleanup_interval_seconds: float = Field(default=300.0, ge=30.0, le=3600.0)
+    phone_upload_retention_seconds: int = Field(default=86_400, ge=300, le=2_592_000)
+    phone_upload_cleanup_batch_size: int = Field(default=100, ge=1, le=1000)
+    phone_upload_rate_limit_requests: int = Field(default=60, ge=5, le=1000)
+    phone_upload_rate_limit_window_seconds: float = Field(default=60.0, ge=1.0, le=3600.0)
+    phone_upload_rate_limit_clients: int = Field(default=256, ge=16, le=4096)
 
     @field_validator("log_level")
     @classmethod
@@ -108,6 +134,50 @@ class Settings(BaseSettings):
             ):
                 raise ValueError("must contain host patterns without schemes or paths")
         return [value.lower() for value in values]
+
+    @field_validator("phone_upload_trusted_hosts")
+    @classmethod
+    def validate_phone_upload_trusted_hosts(cls, values: list[str]) -> list[str]:
+        normalized = cls.validate_trusted_hosts(values)
+        if any("*" in value for value in normalized):
+            raise ValueError("must contain exact phone-upload hosts without wildcards")
+        return normalized
+
+    @field_validator("phone_upload_advertised_host")
+    @classmethod
+    def validate_phone_upload_advertised_host(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().lower().removesuffix(".")
+        if (
+            not normalized
+            or value != value.strip()
+            or not normalized.isascii()
+            or len(normalized) > 253
+            or "://" in normalized
+            or "/" in normalized
+            or any(character.isspace() or ord(character) < 32 for character in normalized)
+        ):
+            raise ValueError("must be a hostname or IPv4 address without a scheme or path")
+        try:
+            IPv4Address(normalized)
+            return normalized
+        except ValueError:
+            labels = normalized.split(".")
+            if any(
+                not label
+                or len(label) > 63
+                or label[0] not in "abcdefghijklmnopqrstuvwxyz0123456789"
+                or label[-1] not in "abcdefghijklmnopqrstuvwxyz0123456789"
+                or any(
+                    character not in "abcdefghijklmnopqrstuvwxyz0123456789-" for character in label
+                )
+                for label in labels
+            ):
+                raise ValueError(
+                    "must be a hostname or IPv4 address without a scheme or path"
+                ) from None
+        return normalized
 
     @field_validator("allowed_origins")
     @classmethod
@@ -153,7 +223,11 @@ class Settings(BaseSettings):
         self.cutout_image_root = self._resolve_data_path(self.cutout_image_root)
         self.outfit_preview_root = self._resolve_data_path(self.outfit_preview_root)
         self.backup_root = self._resolve_data_path(self.backup_root)
+        self.lock_root = self._resolve_data_path(self.lock_root)
         self.frontend_build_path = self._resolve_project_path(self.frontend_build_path)
+        self.phone_upload_frontend_build_path = self._resolve_project_path(
+            self.phone_upload_frontend_build_path
+        )
 
         for path in (
             self.database_path,
@@ -166,6 +240,7 @@ class Settings(BaseSettings):
             self.cutout_image_root,
             self.outfit_preview_root,
             self.backup_root,
+            self.lock_root,
         ):
             if not _is_within(path, self.data_root):
                 raise ValueError("writable paths must remain beneath data_root")
@@ -190,6 +265,7 @@ class Settings(BaseSettings):
             self.temp_upload_root,
             self.temp_preview_root,
             self.backup_root,
+            self.lock_root,
         )
         for index, first in enumerate(storage_directories):
             for second in storage_directories[index + 1 :]:
@@ -208,6 +284,63 @@ class Settings(BaseSettings):
             self.data_root, self.frontend_build_path
         ):
             raise ValueError("frontend_build_path and data_root must not overlap")
+        if _is_within(self.phone_upload_frontend_build_path, self.data_root) or _is_within(
+            self.data_root, self.phone_upload_frontend_build_path
+        ):
+            raise ValueError("phone_upload_frontend_build_path and data_root must not overlap")
+        if _is_within(
+            self.phone_upload_frontend_build_path, self.frontend_build_path
+        ) or _is_within(self.frontend_build_path, self.phone_upload_frontend_build_path):
+            raise ValueError("main and phone-upload frontend builds must not overlap")
+        if self.phone_upload_bind_host.is_unspecified:
+            raise ValueError("phone_upload_bind_host must select one exact IPv4 interface")
+        if self.phone_upload_enabled:
+            if self.phone_upload_bind_host.is_loopback and (
+                self.phone_upload_advertised_host is not None
+                or self.phone_upload_advertised_ipv4 is not None
+            ):
+                raise ValueError(
+                    "a loopback phone_upload_bind_host cannot advertise a LAN endpoint"
+                )
+            if not self.phone_upload_bind_host.is_loopback and (
+                not self.phone_upload_bind_host.is_private
+                or self.phone_upload_bind_host.is_link_local
+                or self.phone_upload_bind_host.is_multicast
+                or self.phone_upload_bind_host.is_reserved
+            ):
+                raise ValueError(
+                    "phone_upload_bind_host must be loopback or one private LAN IPv4 address"
+                )
+            if (
+                self.phone_upload_advertised_ipv4 is not None
+                and self.phone_upload_advertised_ipv4 != self.phone_upload_bind_host
+            ):
+                raise ValueError(
+                    "phone_upload_advertised_ipv4 must match the exact listener bind address"
+                )
+            if self.phone_upload_advertised_host is not None:
+                try:
+                    advertised_host_ipv4 = IPv4Address(self.phone_upload_advertised_host)
+                except ValueError:
+                    advertised_host_ipv4 = None
+                if (
+                    advertised_host_ipv4 is not None
+                    and advertised_host_ipv4 != self.phone_upload_bind_host
+                ):
+                    raise ValueError(
+                        "phone_upload_advertised_host as IPv4 must match the exact listener "
+                        "bind address"
+                    )
+            required_phone_hosts = {str(self.phone_upload_bind_host)}
+            if self.phone_upload_advertised_host is not None:
+                required_phone_hosts.add(self.phone_upload_advertised_host)
+            if self.phone_upload_advertised_ipv4 is not None:
+                required_phone_hosts.add(str(self.phone_upload_advertised_ipv4))
+            missing_hosts = required_phone_hosts.difference(self.phone_upload_trusted_hosts)
+            if missing_hosts:
+                raise ValueError(
+                    "phone_upload_trusted_hosts must contain every configured bind and advertised host"
+                )
 
         if self.environment in {Environment.TESTING, Environment.PRODUCTION} and _is_within(
             self.data_root, REPOSITORY_ROOT
@@ -242,6 +375,11 @@ class Settings(BaseSettings):
                     self.cutout_image_root,
                     self.outfit_preview_root,
                     self.backup_root,
+                    self.lock_root,
                 )
             )
         )
+
+    @property
+    def import_lock_path(self) -> Path:
+        return self.lock_root / "garment-import.lock"

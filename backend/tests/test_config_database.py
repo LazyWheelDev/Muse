@@ -138,12 +138,38 @@ def test_settings_reject_invalid_operational_values(
         Settings.model_validate({"data_root": tmp_path / "data", field: value})
 
 
+def test_phone_upload_ipv4_advertised_host_must_match_listener_bind(tmp_path: Path) -> None:
+    common: dict[str, object] = {
+        "data_root": tmp_path / "data",
+        "phone_upload_enabled": True,
+        "phone_upload_bind_host": "192.168.1.44",
+    }
+
+    accepted = Settings.model_validate(
+        {
+            **common,
+            "phone_upload_advertised_host": "192.168.1.44",
+            "phone_upload_trusted_hosts": ["192.168.1.44"],
+        }
+    )
+    assert accepted.phone_upload_advertised_host == "192.168.1.44"
+
+    with pytest.raises(ValidationError, match=r"advertised_host as IPv4.*exact listener"):
+        Settings.model_validate(
+            {
+                **common,
+                "phone_upload_advertised_host": "192.168.1.45",
+                "phone_upload_trusted_hosts": ["192.168.1.44", "192.168.1.45"],
+            }
+        )
+
+
 def test_migrations_upgrade_check_status_and_downgrade(settings: Settings) -> None:
     LocalStorageService(settings).create_required_directories()
 
     initial = migration_status(settings)
     assert initial.current_revisions == ()
-    assert initial.head_revisions == ("20260715_0002",)
+    assert initial.head_revisions == ("20260715_0003",)
     assert not initial.is_current
 
     upgrade_database(settings)
@@ -160,6 +186,7 @@ def test_migrations_upgrade_check_status_and_downgrade(settings: Settings) -> No
             "clothing_items",
             "outfit_items",
             "outfits",
+            "phone_upload_sessions",
         }
         assert migration_status(settings, database).is_current
     finally:

@@ -24,12 +24,18 @@ import muse_backend.services.multipart_import as multipart_module
 from muse_backend.config import Settings
 from muse_backend.database.models import ClothingImage, ClothingItem
 from muse_backend.domain.enums import ImageKind, ImageProcessingState
-from muse_backend.domain.exceptions import DomainValidationError, MuseError, StorageOperationError
+from muse_backend.domain.exceptions import (
+    DomainValidationError,
+    MuseError,
+    ResourceConflictError,
+    StorageOperationError,
+)
 from muse_backend.services.background_processing import (
     BackgroundProcessingWorker,
     BackgroundResult,
     ConservativeLocalBackgroundProcessor,
     reconcile_interrupted_imports,
+    reconcile_temporary_imports,
 )
 from muse_backend.services.image_processing import validate_and_process_upload
 from muse_backend.services.imports import GarmentImportService
@@ -783,6 +789,7 @@ def worker_for(app: Any, processor: Any) -> BackgroundProcessingWorker:
         storage=app.state.storage,
         database=app.state.database,
         processor=processor,
+        interprocess_lock=app.state.import_admission.interprocess_lock,
     )
 
 
@@ -1104,6 +1111,7 @@ async def test_background_worker_is_single_concurrency_api_responsive_and_shutdo
         storage=app.state.storage,
         database=app.state.database,
         processor=processor,
+        interprocess_lock=app.state.import_admission.interprocess_lock,
     )
     worker.start()
     worker.start()
@@ -1116,3 +1124,37 @@ async def test_background_worker_is_single_concurrency_api_responsive_and_shutdo
     processor.release.set()
     assert worker.stop()
     assert not worker.is_alive
+
+
+async def test_cleanup_cannot_remove_an_active_background_processing_attempt(
+    app: Any,
+    client: httpx.AsyncClient,
+) -> None:
+    item_id = await pending_import(app, client)
+    processor = BlockingCutoutProcessor()
+    worker = worker_for(app, processor)
+    worker.start()
+    assert await asyncio.to_thread(processor.started.wait, 5)
+
+    attempts = list(app.state.settings.temp_upload_root.iterdir())
+    assert len(attempts) == 1
+    try:
+        with (
+            pytest.raises(ResourceConflictError),
+            app.state.import_admission.interprocess_lock.acquire(blocking=False),
+        ):
+            reconcile_temporary_imports(
+                settings=app.state.settings,
+                storage=app.state.storage,
+                database=app.state.database,
+                limit=app.state.settings.phone_upload_cleanup_batch_size,
+            )
+        assert attempts[0].is_dir()
+    finally:
+        processor.release.set()
+
+    assert worker.stop()
+    state, _, _, images = processing_snapshot(app, item_id)
+    assert state == ImageProcessingState.COMPLETED.value
+    assert any(image.image_kind == ImageKind.CUTOUT.value for image in images)
+    assert list(app.state.settings.temp_upload_root.iterdir()) == []

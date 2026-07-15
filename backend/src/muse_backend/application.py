@@ -12,20 +12,24 @@ from muse_backend.api.v1.router import api_v1_router
 from muse_backend.config import Environment, Settings
 from muse_backend.database.engine import Database
 from muse_backend.database.migrations import migration_status
-from muse_backend.domain.exceptions import StorageOperationError
+from muse_backend.domain.exceptions import ResourceConflictError, StorageOperationError
 from muse_backend.frontend import frontend_build_available, register_frontend_routes
 from muse_backend.middleware.request_id import RequestIdMiddleware
 from muse_backend.middleware.security import (
     JsonCORSMiddleware,
     JsonTrustedHostMiddleware,
+    LoopbackOnlyMiddleware,
     RequestBodyLimitMiddleware,
 )
 from muse_backend.schemas.common import ErrorEnvelope
 from muse_backend.services.background_processing import (
     BackgroundProcessingWorker,
     reconcile_interrupted_imports,
+    reconcile_temporary_imports,
 )
+from muse_backend.services.import_admission import ImportAdmission
 from muse_backend.services.outfit_previews import reconcile_outfit_previews
+from muse_backend.services.phone_upload_sessions import PhoneUploadSessionService
 from muse_backend.storage.local import LocalStorageService
 
 logger = logging.getLogger(__name__)
@@ -45,14 +49,53 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     logging.basicConfig(level=active_settings.log_level)
     database = Database(active_settings.database_path)
     storage = LocalStorageService(active_settings)
+    import_admission = ImportAdmission(active_settings)
     background_worker = BackgroundProcessingWorker(
         settings=active_settings,
         storage=storage,
         database=database,
+        interprocess_lock=import_admission.interprocess_lock,
     )
+    phone_upload_sessions = PhoneUploadSessionService(
+        database=database,
+        settings=active_settings,
+    )
+
+    def cleanup_phone_upload_sessions() -> None:
+        try:
+            with import_admission.interprocess_lock.acquire(blocking=False):
+                processed = phone_upload_sessions.cleanup()
+                reconcile_temporary_imports(
+                    settings=active_settings,
+                    storage=storage,
+                    database=database,
+                    limit=max(
+                        0,
+                        active_settings.phone_upload_cleanup_batch_size - processed,
+                    ),
+                )
+        except ResourceConflictError:
+            # An active import owns the cross-process admission lock. The next
+            # bounded cleanup interval can safely retry without touching it.
+            return
+
+    async def phone_upload_cleanup_loop(stop: asyncio.Event) -> None:
+        while not stop.is_set():
+            try:
+                await asyncio.wait_for(
+                    stop.wait(),
+                    timeout=active_settings.phone_upload_cleanup_interval_seconds,
+                )
+            except TimeoutError:
+                try:
+                    await asyncio.to_thread(cleanup_phone_upload_sessions)
+                except Exception:
+                    logger.exception("Bounded phone-upload session cleanup failed")
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        cleanup_stop = asyncio.Event()
+        cleanup_task: asyncio.Task[None] | None = None
         app.state.storage_initialized = False
         try:
             storage.create_required_directories()
@@ -71,11 +114,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except Exception:
             logger.warning("Background processing will wait for the database migration")
         if migrations_current:
-            reconcile_interrupted_imports(
-                settings=active_settings,
-                storage=storage,
-                database=database,
-            )
+            with import_admission.interprocess_lock.acquire(blocking=True):
+                reconcile_interrupted_imports(
+                    settings=active_settings,
+                    storage=storage,
+                    database=database,
+                )
+                phone_upload_sessions.reconcile_all()
             reconcile_outfit_previews(
                 settings=active_settings,
                 storage=storage,
@@ -83,9 +128,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
             if active_settings.background_processing_enabled:
                 background_worker.start()
+            cleanup_task = asyncio.create_task(
+                phone_upload_cleanup_loop(cleanup_stop),
+                name="phone-upload-session-cleanup",
+            )
         try:
             yield
         finally:
+            cleanup_stop.set()
+            if cleanup_task is not None:
+                await cleanup_task
             worker_stopped = background_worker.stop()
             if worker_stopped:
                 database.dispose()
@@ -109,7 +161,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.database = database
     app.state.storage = storage
     app.state.background_worker = background_worker
-    app.state.import_lock = asyncio.Lock()
+    app.state.import_admission = import_admission
+    app.state.phone_upload_sessions = phone_upload_sessions
+    # Compatibility alias for tests and diagnostics; all production imports use
+    # the combined local + inter-process admission object above.
+    app.state.import_lock = import_admission.local_lock
     app.state.storage_initialized = False
     if active_settings.allowed_origins:
         app.add_middleware(
@@ -126,6 +182,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         max_body_size=active_settings.max_api_body_size_bytes,
         streaming_paths=("/api/v1/clothing-items/import",),
     )
+    if active_settings.environment is Environment.PRODUCTION:
+        app.add_middleware(LoopbackOnlyMiddleware)
     app.add_middleware(RequestIdMiddleware)
 
     register_error_handlers(app)

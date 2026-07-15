@@ -14,6 +14,12 @@ from muse_backend.schemas.outfit import (
     OutfitSummary,
     OutfitUpdate,
 )
+from muse_backend.schemas.phone_upload import (
+    PhoneUploadCompleted,
+    PhoneUploadPublicStatus,
+    PhoneUploadSessionCreated,
+    PhoneUploadSessionRead,
+)
 
 __all__ = [
     "ClothingImageRead",
@@ -29,4 +35,8 @@ __all__ = [
     "OutfitSummary",
     "OutfitUpdate",
     "Page",
+    "PhoneUploadCompleted",
+    "PhoneUploadPublicStatus",
+    "PhoneUploadSessionCreated",
+    "PhoneUploadSessionRead",
 ]

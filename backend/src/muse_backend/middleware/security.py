@@ -58,6 +58,7 @@ def _transport_error(
     status_code: int,
     code: str,
     message: str,
+    details: dict[str, object] | None = None,
     headers: dict[str, str] | None = None,
 ) -> JSONResponse:
     state = scope.get("state", {})
@@ -66,6 +67,7 @@ def _transport_error(
         error=ErrorBody(
             code=code,
             message=message,
+            details=details,
             request_id=request_id,
         )
     )
@@ -236,5 +238,32 @@ class RequestBodyLimitMiddleware:
             status_code=status_code,
             code=code,
             message=message,
+        )
+        await response(scope, receive, send)
+
+
+class LoopbackOnlyMiddleware:
+    """Defense in depth if the supported production CLI is misconfigured or bypassed."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        client = scope.get("client")
+        try:
+            is_loopback = client is not None and ipaddress.ip_address(client[0]).is_loopback
+        except ValueError:
+            is_loopback = False
+        if is_loopback:
+            await self.app(scope, receive, send)
+            return
+        response = _transport_error(
+            scope,
+            status_code=403,
+            code="loopback_access_required",
+            message="The Muse device interface is available only on this device.",
         )
         await response(scope, receive, send)
