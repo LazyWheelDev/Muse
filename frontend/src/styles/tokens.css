@@ -1,0 +1,67 @@
+:root {
+  /* Documented Muse color palette */
+  --color-background: #f6efe5;
+  --color-background-soft: #fbf6ee;
+  --color-surface: #fff9f1;
+  --color-surface-muted: #f1e6d7;
+  --color-border: #e2d3bf;
+  --color-champagne: #c9a66b;
+  --color-champagne-dark: #a98249;
+  --color-text-primary: #302e2a;
+  --color-text-secondary: #756f66;
+  --color-text-muted: #a49b90;
+  --color-success: #4f7d45;
+  --color-warning: #a77937;
+  --color-danger: #a55650;
+  --color-disabled: #c8bfb4;
+
+  /* Locally bundled type families */
+  --font-family-display: 'Playfair Display Variable', 'Playfair Display', Georgia, serif;
+  --font-family-interface:
+    'Inter Variable', Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-size-xs: 0.75rem;
+  --font-size-sm: 0.875rem;
+  --font-size-base: 1rem;
+  --font-size-lg: 1.125rem;
+  --font-size-xl: 1.25rem;
+  --font-size-2xl: 1.5rem;
+  --font-size-3xl: 2rem;
+  --font-size-page-title: clamp(2.25rem, 4vw, 3rem);
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --line-height-tight: 1.15;
+  --line-height-normal: 1.5;
+
+  /* Eight-pixel spacing system */
+  --space-0: 0;
+  --space-1: 0.5rem;
+  --space-2: 1rem;
+  --space-3: 1.5rem;
+  --space-4: 2rem;
+  --space-5: 2.5rem;
+  --space-6: 3rem;
+  --space-8: 4rem;
+
+  /* Initial geometry calibrated to the approved visual language */
+  --radius-small: 0.75rem;
+  --radius-medium: 1.25rem;
+  --radius-large: 1.75rem;
+  --radius-pill: 9999px;
+  --shadow-small: 0 0.125rem 0.5rem rgb(117 111 102 / 10%);
+  --shadow-medium: 0 0.5rem 1.5rem rgb(117 111 102 / 14%);
+  --shadow-large: 0 0.875rem 2.25rem rgb(117 111 102 / 18%);
+
+  --touch-target-min: 3.5rem;
+
+  /* Documented restrained motion range */
+  --motion-fast: 180ms;
+  --motion-standard: 240ms;
+  --motion-slow: 280ms;
+  --motion-ease-out: cubic-bezier(0.2, 0, 0, 1);
+
+  --layout-max-width: 80rem;
+  --z-index-background: -1;
+  --z-index-content: 1;
+  --z-index-skip-link: 100;
+}

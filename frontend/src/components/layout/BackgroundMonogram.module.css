@@ -1,0 +1,27 @@
+.monogramFrame {
+  position: fixed;
+  z-index: var(--z-index-background);
+  inset: 0;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  user-select: none;
+}
+
+.monogram {
+  display: block;
+  color: var(--color-surface-muted);
+  font-family: var(--font-family-display);
+  font-size: clamp(32rem, 78vw, 64rem);
+  font-weight: var(--font-weight-regular);
+  line-height: 0.75;
+  opacity: 0.62;
+  transform: translateY(-1%);
+}
+
+@media (max-width: 48rem) {
+  .monogram {
+    font-size: clamp(24rem, 100vw, 40rem);
+  }
+}
