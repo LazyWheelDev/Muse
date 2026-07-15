@@ -2,6 +2,7 @@ from collections.abc import Collection
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.sql.elements import ColumnElement
 
 from muse_backend.database.models import ClothingItem
 
@@ -37,8 +38,16 @@ class ClothingRepository:
         statement = select(ClothingItem).where(ClothingItem.id.in_(item_ids))
         return {item.id: item for item in self.session.scalars(statement)}
 
-    def list_active(self, *, limit: int, offset: int) -> tuple[list[ClothingItem], int]:
-        filters = (ClothingItem.deleted_at.is_(None),)
+    def list_active(
+        self,
+        *,
+        limit: int,
+        offset: int,
+        garment_category: str | None = None,
+    ) -> tuple[list[ClothingItem], int]:
+        filters: list[ColumnElement[bool]] = [ClothingItem.deleted_at.is_(None)]
+        if garment_category is not None:
+            filters.append(ClothingItem.garment_category == garment_category)
         total = self.session.scalar(select(func.count(ClothingItem.id)).where(*filters)) or 0
         statement = (
             select(ClothingItem)

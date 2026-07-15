@@ -49,9 +49,22 @@ class Settings(BaseSettings):
     original_image_root: Path = Path("media/garments/original")
     processed_image_root: Path = Path("media/garments/processed")
     thumbnail_root: Path = Path("media/garments/thumbnails")
+    cutout_image_root: Path = Path("media/garments/cutouts")
     outfit_preview_root: Path = Path("media/outfits/previews")
     backup_root: Path = Path("backups")
     max_upload_size_bytes: int = Field(default=25 * 1024 * 1024, ge=1024, le=500 * 1024 * 1024)
+    max_import_overhead_bytes: int = Field(default=64 * 1024, ge=4096, le=1024 * 1024)
+    upload_chunk_size_bytes: int = Field(default=256 * 1024, ge=16 * 1024, le=1024 * 1024)
+    max_image_pixels: int = Field(default=24_000_000, ge=1_000_000, le=100_000_000)
+    max_image_dimension: int = Field(default=12_000, ge=512, le=100_000)
+    normalized_image_max_dimension: int = Field(default=1600, ge=512, le=4096)
+    thumbnail_max_dimension: int = Field(default=384, ge=128, le=1024)
+    normalized_webp_quality: int = Field(default=85, ge=1, le=100)
+    thumbnail_webp_quality: int = Field(default=80, ge=1, le=100)
+    background_processing_enabled: bool = True
+    background_processing_max_attempts: int = Field(default=2, ge=1, le=10)
+    background_worker_poll_seconds: float = Field(default=0.5, ge=0.05, le=60.0)
+    background_shutdown_timeout_seconds: float = Field(default=10.0, ge=0.1, le=120.0)
     max_api_body_size_bytes: int = Field(default=64 * 1024, ge=1024, le=1024 * 1024)
     log_level: str = "INFO"
     frontend_build_path: Path = Field(default_factory=_default_frontend_build_path)
@@ -135,6 +148,7 @@ class Settings(BaseSettings):
         self.original_image_root = self._resolve_data_path(self.original_image_root)
         self.processed_image_root = self._resolve_data_path(self.processed_image_root)
         self.thumbnail_root = self._resolve_data_path(self.thumbnail_root)
+        self.cutout_image_root = self._resolve_data_path(self.cutout_image_root)
         self.outfit_preview_root = self._resolve_data_path(self.outfit_preview_root)
         self.backup_root = self._resolve_data_path(self.backup_root)
         self.frontend_build_path = self._resolve_project_path(self.frontend_build_path)
@@ -146,6 +160,7 @@ class Settings(BaseSettings):
             self.original_image_root,
             self.processed_image_root,
             self.thumbnail_root,
+            self.cutout_image_root,
             self.outfit_preview_root,
             self.backup_root,
         ):
@@ -156,6 +171,7 @@ class Settings(BaseSettings):
             self.original_image_root,
             self.processed_image_root,
             self.thumbnail_root,
+            self.cutout_image_root,
             self.outfit_preview_root,
         )
         for path in public_media_directories:
@@ -212,6 +228,7 @@ class Settings(BaseSettings):
                     self.original_image_root,
                     self.processed_image_root,
                     self.thumbnail_root,
+                    self.cutout_image_root,
                     self.outfit_preview_root,
                     self.backup_root,
                 )

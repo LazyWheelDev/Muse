@@ -59,7 +59,7 @@ def configure_sqlite_connection(
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MILLISECONDS}")
         cursor.execute("PRAGMA journal_mode=WAL")
-        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute("PRAGMA synchronous=FULL")
         cursor.close()
     finally:
         dbapi_connection.autocommit = previous_autocommit

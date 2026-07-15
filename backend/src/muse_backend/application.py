@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -10,6 +11,7 @@ from muse_backend.api.errors import register_error_handlers
 from muse_backend.api.v1.router import api_v1_router
 from muse_backend.config import Environment, Settings
 from muse_backend.database.engine import Database
+from muse_backend.database.migrations import migration_status
 from muse_backend.domain.exceptions import StorageOperationError
 from muse_backend.frontend import frontend_build_available, register_frontend_routes
 from muse_backend.middleware.request_id import RequestIdMiddleware
@@ -19,6 +21,10 @@ from muse_backend.middleware.security import (
     RequestBodyLimitMiddleware,
 )
 from muse_backend.schemas.common import ErrorEnvelope
+from muse_backend.services.background_processing import (
+    BackgroundProcessingWorker,
+    reconcile_interrupted_imports,
+)
 from muse_backend.storage.local import LocalStorageService
 
 logger = logging.getLogger(__name__)
@@ -38,6 +44,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     logging.basicConfig(level=active_settings.log_level)
     database = Database(active_settings.database_path)
     storage = LocalStorageService(active_settings)
+    background_worker = BackgroundProcessingWorker(
+        settings=active_settings,
+        storage=storage,
+        database=database,
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -53,10 +64,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             active_settings.frontend_build_path
         ):
             logger.error("The configured Muse frontend build is unavailable")
+        migrations_current = False
+        try:
+            migrations_current = migration_status(active_settings, database).is_current
+        except Exception:
+            logger.warning("Background processing will wait for the database migration")
+        if migrations_current:
+            reconcile_interrupted_imports(
+                settings=active_settings,
+                storage=storage,
+                database=database,
+            )
+            if active_settings.background_processing_enabled:
+                background_worker.start()
         try:
             yield
         finally:
-            database.dispose()
+            worker_stopped = background_worker.stop()
+            if worker_stopped:
+                database.dispose()
+            else:
+                logger.warning(
+                    "Keeping the database engine available for an in-flight background job"
+                )
 
     docs_enabled = active_settings.environment is not Environment.PRODUCTION
     app = FastAPI(
@@ -72,6 +102,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = active_settings
     app.state.database = database
     app.state.storage = storage
+    app.state.background_worker = background_worker
+    app.state.import_lock = asyncio.Lock()
     app.state.storage_initialized = False
     if active_settings.allowed_origins:
         app.add_middleware(
@@ -79,13 +111,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             allow_origins=active_settings.allowed_origins,
             allow_credentials=False,
             allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-            allow_headers=["Accept", "Content-Type", "X-Request-ID"],
-            expose_headers=["X-Request-ID"],
+            allow_headers=["Accept", "Content-Type", "Idempotency-Key", "X-Request-ID"],
+            expose_headers=["Idempotency-Replayed", "Location", "X-Request-ID"],
         )
     app.add_middleware(JsonTrustedHostMiddleware, allowed_hosts=active_settings.trusted_hosts)
     app.add_middleware(
         RequestBodyLimitMiddleware,
         max_body_size=active_settings.max_api_body_size_bytes,
+        streaming_paths=("/api/v1/clothing-items/import",),
     )
     app.add_middleware(RequestIdMiddleware)
 

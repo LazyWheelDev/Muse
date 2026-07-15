@@ -26,8 +26,18 @@ class BodyZone(StrEnum):
 
 class ImageKind(StrEnum):
     ORIGINAL = "original"
-    PROCESSED = "processed"
+    NORMALIZED = "normalized"
     THUMBNAIL = "thumbnail"
+    CUTOUT = "cutout"
+
+
+class ImageProcessingState(StrEnum):
+    NOT_REQUESTED = "not_requested"
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    COMPLETED_WITH_FALLBACK = "completed_with_fallback"
+    FAILED = "failed"
 
 
 CATEGORY_DEFAULT_BODY_ZONES = MappingProxyType(

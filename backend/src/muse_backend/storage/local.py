@@ -1,6 +1,8 @@
+import json
 import logging
 import os
 import re
+import shutil
 import time
 from pathlib import Path
 from threading import Lock
@@ -19,6 +21,7 @@ logger = logging.getLogger(__name__)
 _EXTENSION_PATTERN = re.compile(r"^\.[a-z0-9]{1,10}$")
 _APPROVED_IMAGE_EXTENSIONS = frozenset({".jpeg", ".jpg", ".png", ".webp"})
 _INTERNAL_IMAGE_FILENAME_PATTERN = re.compile(r"^[0-9a-f]{32}\.(?:jpeg|jpg|png|webp)$")
+_ATTEMPT_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
 
 
 class LocalStorageService:
@@ -87,8 +90,9 @@ class LocalStorageService:
     def image_root(self, image_kind: ImageKind) -> Path:
         return {
             ImageKind.ORIGINAL: self.settings.original_image_root,
-            ImageKind.PROCESSED: self.settings.processed_image_root,
+            ImageKind.NORMALIZED: self.settings.processed_image_root,
             ImageKind.THUMBNAIL: self.settings.thumbnail_root,
+            ImageKind.CUTOUT: self.settings.cutout_image_root,
         }[image_kind]
 
     def validate_image_location(self, relative_path: str, image_kind: ImageKind) -> Path:
@@ -170,6 +174,7 @@ class LocalStorageService:
                 self.settings.original_image_root,
                 self.settings.processed_image_root,
                 self.settings.thumbnail_root,
+                self.settings.cutout_image_root,
                 self.settings.outfit_preview_root,
             )
             return any(resolved.is_relative_to(root.resolve()) for root in approved_roots)
@@ -207,6 +212,80 @@ class LocalStorageService:
         except OSError as error:
             logger.exception("Could not delete a Muse temporary file")
             raise StorageOperationError from error
+
+    def delete_temporary_tree(self, attempt_id: str) -> None:
+        if not _ATTEMPT_ID_PATTERN.fullmatch(attempt_id):
+            raise DomainValidationError(
+                code="invalid_relative_path",
+                message="The supplied local media reference is invalid.",
+            )
+        candidate = self.resolve_temp_path(attempt_id)
+        try:
+            if candidate.is_symlink():
+                candidate.unlink(missing_ok=True)
+            elif candidate.exists():
+                shutil.rmtree(candidate)
+            if self.settings.temp_upload_root.is_dir():
+                self._fsync_directory(self.settings.temp_upload_root)
+        except OSError as error:
+            logger.exception("Could not delete a Muse temporary import directory")
+            raise StorageOperationError from error
+
+    def write_import_manifest(self, attempt_id: str, payload: dict[str, object]) -> Path:
+        if not _ATTEMPT_ID_PATTERN.fullmatch(attempt_id):
+            raise DomainValidationError(
+                code="invalid_relative_path",
+                message="The supplied local media reference is invalid.",
+            )
+        attempt_directory = self.resolve_temp_path(attempt_id)
+        destination = attempt_directory / "manifest.json"
+        temporary = attempt_directory / "manifest.json.tmp"
+        encoded = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+        try:
+            with temporary.open("xb") as handle:
+                handle.write(encoded)
+                handle.flush()
+                os.fsync(handle.fileno())
+            temporary.chmod(0o600)
+            os.replace(temporary, destination)
+            self._fsync_directory(attempt_directory)
+            return destination
+        except OSError as error:
+            temporary.unlink(missing_ok=True)
+            logger.exception("Could not persist a Muse import manifest")
+            raise StorageOperationError from error
+
+    def delete_owned_media(self, relative_path: str) -> None:
+        candidate = self.resolve_media_path(relative_path)
+        if (
+            not _INTERNAL_IMAGE_FILENAME_PATTERN.fullmatch(candidate.name)
+            or not self.is_approved_persistent_media_location(candidate)
+            or self._contains_symlink(self.settings.media_root, candidate)
+        ):
+            raise DomainValidationError(
+                code="invalid_media_location",
+                message="Persistent media must use an approved local directory.",
+            )
+        try:
+            candidate.unlink(missing_ok=True)
+            if candidate.parent.is_dir():
+                self._fsync_directory(candidate.parent)
+        except OSError as error:
+            logger.exception("Could not compensate a Muse media promotion")
+            raise StorageOperationError from error
+
+    def media_relative_path(self, path: Path) -> str:
+        try:
+            return (
+                path.resolve(strict=False)
+                .relative_to(self.settings.media_root.resolve())
+                .as_posix()
+            )
+        except (OSError, RuntimeError, ValueError) as error:
+            raise DomainValidationError(
+                code="invalid_media_location",
+                message="Persistent media must use an approved local directory.",
+            ) from error
 
     def writable(self, *, force: bool = False) -> bool:
         now = time.monotonic()

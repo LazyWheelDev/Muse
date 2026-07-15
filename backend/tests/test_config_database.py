@@ -142,7 +142,7 @@ def test_migrations_upgrade_check_status_and_downgrade(settings: Settings) -> No
 
     initial = migration_status(settings)
     assert initial.current_revisions == ()
-    assert initial.head_revisions == ("20260715_0001",)
+    assert initial.head_revisions == ("20260715_0002",)
     assert not initial.is_current
 
     upgrade_database(settings)
@@ -195,7 +195,7 @@ def test_sqlite_connection_pragmas_and_transaction_rollback(
                 == SQLITE_BUSY_TIMEOUT_MILLISECONDS
             )
             assert connection.exec_driver_sql("PRAGMA journal_mode").scalar_one() == "wal"
-            assert connection.exec_driver_sql("PRAGMA synchronous").scalar_one() == 1
+            assert connection.exec_driver_sql("PRAGMA synchronous").scalar_one() == 2
 
         with (
             pytest.raises(RuntimeError, match="force rollback"),

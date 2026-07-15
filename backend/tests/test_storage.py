@@ -109,7 +109,8 @@ def test_image_locations_must_match_declared_kind(settings: Settings) -> None:
     original = "garments/original/item.jpg"
 
     assert storage.image_root(ImageKind.ORIGINAL) == settings.original_image_root
-    assert storage.image_root(ImageKind.PROCESSED) == settings.processed_image_root
+    assert storage.image_root(ImageKind.NORMALIZED) == settings.processed_image_root
+    assert storage.image_root(ImageKind.CUTOUT) == settings.cutout_image_root
     assert storage.image_root(ImageKind.THUMBNAIL) == settings.thumbnail_root
     assert storage.validate_image_location(original, ImageKind.ORIGINAL) == (
         settings.media_root / original

@@ -11,6 +11,8 @@ lightweight process on a Raspberry Pi 5 and has no mandatory cloud dependency.
 - FastAPI and Pydantic
 - SQLAlchemy 2 with the standard-library SQLite driver
 - Alembic migrations
+- python-multipart for bounded streaming ingestion
+- Pillow for local validation, normalization, thumbnails, and conservative cutouts
 - Ruff, mypy, pytest, HTTPX, and pytest-cov for development
 
 ```text
@@ -50,25 +52,38 @@ Settings use the `MUSE_` prefix and are loaded from process environment variable
 or an optional `backend/.env`. Copy `.env.example` for local overrides. Paths may
 be absolute or relative; writable child paths resolve beneath `MUSE_DATA_ROOT`.
 
-| Variable                       | Development default         | Purpose                                                 |
-| ------------------------------ | --------------------------- | ------------------------------------------------------- |
-| `MUSE_ENVIRONMENT`             | `development`               | `development`, `testing`, or `production` safety policy |
-| `MUSE_DATA_ROOT`               | `../local-data`             | Parent of every writable runtime path                   |
-| `MUSE_DATABASE_PATH`           | `muse.sqlite3`              | SQLite file, relative to data root                      |
-| `MUSE_MEDIA_ROOT`              | `media`                     | Parent for persistent local media                       |
-| `MUSE_TEMP_UPLOAD_ROOT`        | `tmp/uploads`               | Staging area for future imports                         |
-| `MUSE_ORIGINAL_IMAGE_ROOT`     | `media/garments/original`   | Original garment files                                  |
-| `MUSE_PROCESSED_IMAGE_ROOT`    | `media/garments/processed`  | Best-effort processed garment files                     |
-| `MUSE_THUMBNAIL_ROOT`          | `media/garments/thumbnails` | Local thumbnails                                        |
-| `MUSE_OUTFIT_PREVIEW_ROOT`     | `media/outfits/previews`    | Future rendered outfit previews                         |
-| `MUSE_BACKUP_ROOT`             | `backups`                   | Reserved local backup location                          |
-| `MUSE_MAX_UPLOAD_SIZE_BYTES`   | `26214400`                  | Validated future upload limit (25 MiB)                  |
-| `MUSE_MAX_API_BODY_SIZE_BYTES` | `65536`                     | Metadata API request limit (64 KiB)                     |
-| `MUSE_LOG_LEVEL`               | `INFO`                      | Python log level                                        |
-| `MUSE_FRONTEND_BUILD_PATH`     | `../frontend/dist`          | Existing Vite production build                          |
-| `MUSE_SERVE_FRONTEND`          | `false`                     | Enable same-origin SPA serving                          |
-| `MUSE_TRUSTED_HOSTS`           | local hosts                 | JSON list accepted by trusted-host middleware           |
-| `MUSE_ALLOWED_ORIGINS`         | Vite local origins          | JSON list for deliberate development CORS access        |
+| Variable                                   | Development default         | Purpose                                                 |
+| ------------------------------------------ | --------------------------- | ------------------------------------------------------- |
+| `MUSE_ENVIRONMENT`                         | `development`               | `development`, `testing`, or `production` safety policy |
+| `MUSE_DATA_ROOT`                           | `../local-data`             | Parent of every writable runtime path                   |
+| `MUSE_DATABASE_PATH`                       | `muse.sqlite3`              | SQLite file, relative to data root                      |
+| `MUSE_MEDIA_ROOT`                          | `media`                     | Parent for persistent local media                       |
+| `MUSE_TEMP_UPLOAD_ROOT`                    | `tmp/uploads`               | Private streaming/import-attempt staging                |
+| `MUSE_ORIGINAL_IMAGE_ROOT`                 | `media/garments/original`   | Exact, immutable upload bytes                           |
+| `MUSE_PROCESSED_IMAGE_ROOT`                | `media/garments/processed`  | Browser-safe normalized WebP files                      |
+| `MUSE_THUMBNAIL_ROOT`                      | `media/garments/thumbnails` | Wardrobe grid thumbnails                                |
+| `MUSE_CUTOUT_IMAGE_ROOT`                   | `media/garments/cutouts`    | Optional best-effort cutouts                            |
+| `MUSE_OUTFIT_PREVIEW_ROOT`                 | `media/outfits/previews`    | Future rendered outfit previews                         |
+| `MUSE_BACKUP_ROOT`                         | `backups`                   | Reserved local backup location                          |
+| `MUSE_MAX_UPLOAD_SIZE_BYTES`               | `26214400`                  | Maximum source image bytes (25 MiB)                     |
+| `MUSE_MAX_IMPORT_OVERHEAD_BYTES`           | `65536`                     | Multipart metadata and framing allowance                |
+| `MUSE_UPLOAD_CHUNK_SIZE_BYTES`             | `262144`                    | Maximum parser work chunk                               |
+| `MUSE_MAX_IMAGE_PIXELS`                    | `24000000`                  | Maximum decoded source pixel count                      |
+| `MUSE_MAX_IMAGE_DIMENSION`                 | `12000`                     | Maximum source width or height                          |
+| `MUSE_NORMALIZED_IMAGE_MAX_DIMENSION`      | `1600`                      | Maximum normalized WebP side                            |
+| `MUSE_THUMBNAIL_MAX_DIMENSION`             | `384`                       | Maximum thumbnail side                                  |
+| `MUSE_NORMALIZED_WEBP_QUALITY`             | `85`                        | Normalized lossy WebP quality                           |
+| `MUSE_THUMBNAIL_WEBP_QUALITY`              | `80`                        | Thumbnail lossy WebP quality                            |
+| `MUSE_BACKGROUND_PROCESSING_ENABLED`       | `true`                      | Run the bounded optional cutout worker                  |
+| `MUSE_BACKGROUND_PROCESSING_MAX_ATTEMPTS`  | `2`                         | Retry ceiling for transient processor failures          |
+| `MUSE_BACKGROUND_WORKER_POLL_SECONDS`      | `0.5`                       | Durable queue poll interval                             |
+| `MUSE_BACKGROUND_SHUTDOWN_TIMEOUT_SECONDS` | `10.0`                      | Graceful worker join deadline                           |
+| `MUSE_MAX_API_BODY_SIZE_BYTES`             | `65536`                     | Non-import metadata body limit                          |
+| `MUSE_LOG_LEVEL`                           | `INFO`                      | Python log level                                        |
+| `MUSE_FRONTEND_BUILD_PATH`                 | `../frontend/dist`          | Existing Vite production build                          |
+| `MUSE_SERVE_FRONTEND`                      | `false`                     | Enable same-origin SPA serving                          |
+| `MUSE_TRUSTED_HOSTS`                       | local hosts                 | JSON list accepted by trusted-host middleware           |
+| `MUSE_ALLOWED_ORIGINS`                     | Vite local origins          | JSON list for deliberate development CORS access        |
 
 Production and test environments reject a data root inside the repository.
 Configure an external production location such as `/var/lib/muse`. Startup
@@ -167,7 +182,8 @@ The API is versioned below `/api/v1`.
 | `GET /api/v1/health`                 | Process liveness and backend version                        |
 | `GET /api/v1/readiness`              | Database, migrations, storage, and optional frontend checks |
 | `POST /api/v1/clothing-items`        | Create clothing metadata without uploading an image         |
-| `GET /api/v1/clothing-items`         | Page through active clothing items                          |
+| `POST /api/v1/clothing-items/import` | Stream, validate, persist, and enqueue one local photograph |
+| `GET /api/v1/clothing-items`         | Page active items; optionally select `garment_category`     |
 | `GET /api/v1/clothing-items/{id}`    | Read one active item and its image metadata                 |
 | `PATCH /api/v1/clothing-items/{id}`  | Update validated clothing metadata                          |
 | `DELETE /api/v1/clothing-items/{id}` | Soft-delete clothing metadata                               |
@@ -183,10 +199,81 @@ non-negative `offset` query parameters. Expected failures use a stable JSON
 error envelope and an `X-Request-ID` response header. Validation errors never
 expose local absolute paths or stack traces.
 
-Metadata request bodies are limited by `MUSE_MAX_API_BODY_SIZE_BYTES`. The
-larger `MUSE_MAX_UPLOAD_SIZE_BYTES` value is reserved for the next streaming
-image-import endpoint and does not enable uploads by itself. Public media is
-limited to approved image extensions beneath configured image/preview roots.
+The import request contains exactly one `metadata` JSON part and one `image`
+part. Optional `Idempotency-Key` values make a safe retry return the originally
+committed garment. Metadata request bodies are limited by
+`MUSE_MAX_API_BODY_SIZE_BYTES`; import bodies instead use the image limit plus
+bounded multipart overhead. Public media is limited to approved image
+extensions beneath configured image/preview roots.
+
+## Garment import and processing
+
+JPEG, PNG, and WebP uploads are signature-checked, fully decoded under explicit
+dimension and pixel limits, oriented from EXIF, converted to a browser-safe
+color mode, and written as normalized and thumbnail WebP derivatives. The
+source bytes are hashed, atomically promoted without modification, and recorded
+as a separate `original` image. Derivative records share an image-group ID so
+the API exposes one carousel photograph rather than three duplicate slides.
+
+Core import acknowledgment does not wait for optional background removal. A
+single local worker claims persistent jobs and records `pending`, `processing`,
+`completed`, or `completed_with_fallback`. The default conservative Pillow
+processor preserves useful existing alpha or removes only a sufficiently
+uniform, border-connected background. It does not download an ML model. A
+failed or low-confidence cutout remains explicit and the UI falls back to the
+normalized derivative.
+
+The core lock does **not** include rembg, ONNX Runtime, or a model file. Their
+current Python and Linux ARM64 packaging is promising, but their model storage,
+first-run download behavior, sustained Pi latency, and thermal impact have not
+yet passed target-hardware acceptance. `MUSE_BACKGROUND_PROCESSING_ENABLED`
+therefore controls only the shipped Pillow processor; it does not silently turn
+on ML inference.
+
+The worker accepts the `BackgroundRemovalProcessor` protocol for a future
+higher-quality local adapter. Enabling one on a Pi requires all of the following
+as an explicit later change: pin an ARM64/Python 3.13 inference stack in
+`uv.lock`, provision the selected model inside the device image (never download
+it on first use), implement and test an adapter that writes a validated static
+WebP, inject that adapter when constructing the single worker, and pass the
+latency, RSS, temperature, recovery, and offline checks in the Pi validation
+procedure. Until then, fallback is the supported production behavior.
+
+Temporary attempts carry durable manifests. Startup reconciliation resets
+interrupted jobs, compensates uncommitted promoted files only after checking
+database ownership, retains ambiguous/unknown media for inspection, and logs
+registered files that are missing or generated files with no row. An exact
+original is never removed because optional processing failed. SQLite uses
+foreign keys, WAL journaling, a busy timeout, and `synchronous=FULL` for this
+single-device durability profile.
+
+### Performance validation
+
+Development-machine measurements on 2026-07-15 used an Apple M4 (`arm64`),
+Python 3.13.14, and local temporary storage. One synthetic 4000 x 3000 JPEG
+decoded, oriented, normalized to 1600 x 1200, and thumbnailed to 384 x 288 in
+0.142 seconds. A 24-item first page selected from 60 metadata-only garments had
+a 0.58 ms median and 2.55 ms maximum across 20 runs. These are repeatable
+development observations, not Raspberry Pi claims; real photographs compress
+and decode differently.
+
+Before a device release, repeat the following on the target Raspberry Pi 5:
+
+1. Import representative JPEG, PNG, and WebP photographs near 1, 12, and 24
+   megapixels while recording wall time, peak resident memory, derivative sizes,
+   and device temperature.
+2. Confirm no source over 25 MiB or 24 megapixels is accepted and that a
+   cancelled transfer leaves no temporary attempt.
+3. Request health, Wardrobe pages, and Clothing Details while the single cutout
+   worker is active; record p50/p95 latency and confirm imports remain bounded to
+   one core processing operation at a time.
+4. Restart during both `pending` and `processing`, verify startup reconciliation,
+   and confirm the exact original remains retrievable.
+5. Exercise at least 60 garments in carousel and grid views, checking that the
+   UI requests thumbnails rather than every original and that Chromium remains
+   responsive at 1280 x 800.
+6. Verify owner-only data permissions, available disk space, systemd shutdown,
+   and database/media consistency after a hard power-cycle test.
 
 Inspect and exercise the local contract at:
 

@@ -43,6 +43,9 @@ class ClothingImageService:
             height=payload.height,
             byte_size=payload.byte_size,
             is_primary=payload.is_primary,
+            content_sha256=payload.content_sha256,
+            image_group_id=payload.image_group_id,
+            display_order=payload.display_order,
         )
         try:
             with self.session.begin():

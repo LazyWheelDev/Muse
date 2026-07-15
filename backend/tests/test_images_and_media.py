@@ -109,7 +109,7 @@ async def test_image_detail_orders_primary_before_other_images(
         relative_path=primary_path,
         byte_size=7,
         is_primary=True,
-        image_kind=ImageKind.PROCESSED,
+        image_kind=ImageKind.NORMALIZED,
     )
     primary = register_image(app, primary_payload)
 

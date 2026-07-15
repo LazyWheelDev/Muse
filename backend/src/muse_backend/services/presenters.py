@@ -1,7 +1,9 @@
+from collections import defaultdict
 from urllib.parse import quote
 
 from muse_backend.database.models import ClothingImage, ClothingItem, Outfit, OutfitItem
 from muse_backend.schemas.clothing import (
+    ClothingImageGroupRead,
     ClothingImageRead,
     ClothingItemDetail,
     ClothingItemSummary,
@@ -23,6 +25,8 @@ def clothing_image_read(image: ClothingImage) -> ClothingImageRead:
         height=image.height,
         byte_size=image.byte_size,
         is_primary=image.is_primary,
+        image_group_id=image.image_group_id,
+        display_order=image.display_order,
         created_at=image.created_at,
         updated_at=image.updated_at,
         content_url=_media_url(image.relative_path),
@@ -44,16 +48,73 @@ def _clothing_metadata(item: ClothingItem) -> dict[str, object]:
         "purchase_currency": item.purchase_currency,
         "purchase_date": item.purchase_date,
         "notes": item.notes,
+        "image_processing_state": item.image_processing_state,
+        "processing_error_code": item.processing_error_code,
         "created_at": item.created_at,
         "updated_at": item.updated_at,
     }
 
 
-def clothing_summary(item: ClothingItem) -> ClothingItemSummary:
+def _image_groups(item: ClothingItem) -> list[ClothingImageGroupRead]:
+    grouped: dict[str, list[ClothingImage]] = defaultdict(list)
+    for image in item.images:
+        grouped[image.image_group_id].append(image)
+    preference = {"cutout": 0, "normalized": 1, "original": 2, "thumbnail": 3}
+    rendered: list[ClothingImageGroupRead] = []
+    for image_group_id, images in grouped.items():
+        ordered = sorted(images, key=lambda image: (preference.get(image.image_kind, 99), image.id))
+        display = next(
+            (
+                image
+                for image in ordered
+                if image.image_kind in {"cutout", "normalized", "original"}
+            ),
+            ordered[0],
+        )
+        thumbnail = next(
+            (image for image in ordered if image.image_kind == "thumbnail"),
+            display,
+        )
+        original = next((image for image in ordered if image.image_kind == "original"), None)
+        rendered.append(
+            ClothingImageGroupRead(
+                image_group_id=image_group_id,
+                display_order=min(image.display_order for image in images),
+                display_image=clothing_image_read(display),
+                thumbnail_image=clothing_image_read(thumbnail),
+                original_image=clothing_image_read(original) if original is not None else None,
+                images=[clothing_image_read(image) for image in ordered],
+            )
+        )
+    return sorted(
+        rendered,
+        key=lambda group: (
+            group.display_order,
+            group.image_group_id,
+        ),
+    )
+
+
+def _primary_group(item: ClothingItem) -> ClothingImageGroupRead | None:
+    groups = _image_groups(item)
     primary = next((image for image in item.images if image.is_primary), None)
+    if primary is not None:
+        return next(
+            (group for group in groups if group.image_group_id == primary.image_group_id),
+            None,
+        )
+    return groups[0] if groups else None
+
+
+def clothing_summary(item: ClothingItem) -> ClothingItemSummary:
+    primary_group = _primary_group(item)
+    display = primary_group.display_image if primary_group is not None else None
+    thumbnail = primary_group.thumbnail_image if primary_group is not None else None
     return ClothingItemSummary(
         **_clothing_metadata(item),
-        primary_image=clothing_image_read(primary) if primary is not None else None,
+        primary_image=display,
+        display_image=display,
+        thumbnail_image=thumbnail,
     )
 
 
@@ -64,6 +125,7 @@ def clothing_detail(item: ClothingItem) -> ClothingItemDetail:
     return ClothingItemDetail(
         **_clothing_metadata(item),
         images=[clothing_image_read(image) for image in ordered_images],
+        image_groups=_image_groups(item),
     )
 
 

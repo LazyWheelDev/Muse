@@ -57,8 +57,18 @@ class ClothingService:
             self.repository.add(item)
         return clothing_detail(item)
 
-    def list(self, *, limit: int, offset: int) -> Page[ClothingItemSummary]:
-        items, total = self.repository.list_active(limit=limit, offset=offset)
+    def list(
+        self,
+        *,
+        limit: int,
+        offset: int,
+        garment_category: GarmentCategory | None = None,
+    ) -> Page[ClothingItemSummary]:
+        items, total = self.repository.list_active(
+            limit=limit,
+            offset=offset,
+            garment_category=garment_category.value if garment_category is not None else None,
+        )
         return Page[ClothingItemSummary](
             items=[clothing_summary(item) for item in items],
             total=total,

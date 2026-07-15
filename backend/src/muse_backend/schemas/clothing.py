@@ -2,10 +2,16 @@ from datetime import date, datetime
 from decimal import Decimal
 from pathlib import PurePosixPath
 from typing import Self
+from uuid import uuid4
 
 from pydantic import Field, field_validator, model_validator
 
-from muse_backend.domain.enums import BodyZone, GarmentCategory, ImageKind
+from muse_backend.domain.enums import (
+    BodyZone,
+    GarmentCategory,
+    ImageKind,
+    ImageProcessingState,
+)
 from muse_backend.domain.validation import (
     normalize_optional_text,
     normalize_relative_path,
@@ -135,6 +141,12 @@ class ClothingImageRegistration(ApiSchema):
     height: int = Field(gt=0, le=100_000)
     byte_size: int = Field(gt=0, le=SQLITE_MAX_INTEGER)
     is_primary: bool = False
+    content_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    image_group_id: str = Field(
+        default_factory=lambda: uuid4().hex,
+        pattern=r"^[0-9a-f]{32}$",
+    )
+    display_order: int = Field(default=0, ge=0, le=SQLITE_MAX_INTEGER)
 
     @field_validator("relative_path")
     @classmethod
@@ -157,19 +169,35 @@ class ClothingImageRead(TimestampedSchema):
     height: int
     byte_size: int
     is_primary: bool
+    image_group_id: str
+    display_order: int
     content_url: str
+
+
+class ClothingImageGroupRead(ApiSchema):
+    image_group_id: str
+    display_order: int
+    display_image: ClothingImageRead
+    thumbnail_image: ClothingImageRead
+    original_image: ClothingImageRead | None
+    images: list[ClothingImageRead]
 
 
 class ClothingItemBaseRead(ClothingMetadata, TimestampedSchema):
     id: int
+    image_processing_state: ImageProcessingState
+    processing_error_code: str | None
 
 
 class ClothingItemSummary(ClothingItemBaseRead):
     primary_image: ClothingImageRead | None
+    display_image: ClothingImageRead | None
+    thumbnail_image: ClothingImageRead | None
 
 
 class ClothingItemDetail(ClothingItemBaseRead):
     images: list[ClothingImageRead]
+    image_groups: list[ClothingImageGroupRead]
 
 
 class ClothingReferenceRead(ApiSchema):

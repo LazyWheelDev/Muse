@@ -138,12 +138,23 @@ class JsonCORSMiddleware(CORSMiddleware):
 
 
 class RequestBodyLimitMiddleware:
-    def __init__(self, app: ASGIApp, *, max_body_size: int) -> None:
+    def __init__(
+        self,
+        app: ASGIApp,
+        *,
+        max_body_size: int,
+        streaming_paths: Sequence[str] = (),
+    ) -> None:
         self.app = app
         self.max_body_size = max_body_size
+        self.streaming_paths = frozenset(streaming_paths)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http" or scope["method"] not in {"POST", "PUT", "PATCH"}:
+        if (
+            scope["type"] != "http"
+            or scope["method"] not in {"POST", "PUT", "PATCH"}
+            or scope.get("path") in self.streaming_paths
+        ):
             await self.app(scope, receive, send)
             return
 
