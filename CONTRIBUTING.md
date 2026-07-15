@@ -98,6 +98,18 @@ npm run test:e2e
 Apply frontend formatting with `npm run format`; use `npm run test:watch` while
 iterating. Playwright exercises Chromium at `1280 × 800`.
 
+To run the destructive full-stack browser smoke check, first build the frontend
+and start FastAPI against a newly migrated disposable data root. Then run, from
+another terminal:
+
+```bash
+cd frontend
+PLAYWRIGHT_BASE_URL=http://127.0.0.1:8000 npm run test:e2e:production
+```
+
+The test imports, edits, reloads, and soft-deletes its own garment. Never target
+an existing personal or production wardrobe.
+
 Run both suites for cross-stack changes. GitHub Actions performs locked installs,
 all static checks and tests, a clean-database migration check, the frontend
 production build, shell Playwright tests, and a production same-origin smoke
@@ -118,6 +130,15 @@ test through FastAPI.
 - Use relative POSIX paths in persisted media references. Resolve paths only
   through the local-storage abstraction; reject traversal, absolute paths, and
   caller-selected destination names.
+- Stream garment multipart bodies directly into the configured temporary root.
+  Do not replace this with `request.form()`, `UploadFile`, or an in-memory body
+  buffer without re-establishing the same size, cleanup, and crash guarantees.
+- Preserve source bytes exactly. Generate normalized, thumbnail, and optional
+  cutout variants as separate records in one logical image group; never treat
+  derivatives as separate carousel photographs.
+- Keep optional processing outside long SQLite transactions. Any change to the
+  import manifest or reconciliation protocol requires injected-failure and
+  restart tests.
 - Do not call SQLAlchemy `metadata.create_all()` as a runtime migration shortcut.
 
 ### Schema changes
@@ -169,6 +190,11 @@ and production environments and deliberately leaves media in place.
 - Treat `assets/ui/mockups/` as approved references, not runtime UI assets.
 - Keep backend access behind the typed API client, pass `AbortSignal` where
   lifecycle cancellation matters, and present unavailable states accessibly.
+- Keep server state in TanStack Query and Wardrobe navigation context in
+  validated URL parameters. Invalidate clothing collections after import,
+  update, and soft deletion rather than maintaining a competing global store.
+- Revoke every local image-preview object URL and keep multipart upload progress,
+  cancellation, and structured errors in the centralized clothing client.
 - Do not introduce a dark theme during the MVP.
 
 ## Scope discipline
@@ -182,3 +208,7 @@ are also outside the current milestone. New ideas belong in
 
 Update tests and documentation whenever behavior, commands, configuration, API
 contracts, or architecture change.
+
+Hardware acceptance follows
+[docs/raspberry-pi-validation.md](docs/raspberry-pi-validation.md). Development
+machine measurements must be reported separately from real Raspberry Pi results.

@@ -5,10 +5,11 @@ touchscreen. It lets users organize clothing, compose garments on a silhouette,
 control layers, and save outfits without requiring a cloud account, subscription,
 or Internet connection.
 
-The current implementation milestone provides the React application shell, a
-versioned FastAPI API, SQLite persistence, safe local-storage foundations, and
-development/production integration. It does not yet implement the complete
-product screens or image import workflow.
+The current implementation includes a complete local garment vertical slice:
+streaming image import, exact-original preservation, safe local derivatives,
+SQLite persistence, Wardrobe category browsing, Clothing Details editing, and
+soft deletion. Outfit Builder, Saved Outfits UI, phone QR import, and kiosk
+deployment remain later milestones.
 
 ## MVP principles
 
@@ -133,6 +134,7 @@ local-data/
     garments/original/
     garments/processed/
     garments/thumbnails/
+    garments/cutouts/
     outfits/previews/
   tmp/uploads/
   backups/
@@ -145,9 +147,42 @@ in production. Configuration also prevents database, temporary, backup, public
 media, and frontend-build paths from overlapping. Runtime directories and newly
 promoted media are owner-only.
 
-Metadata API bodies default to a 64 KiB limit. The separately configured 25 MiB
-upload limit is a validated placeholder for the next streaming image-import
-slice; no upload endpoint exists in this milestone.
+Metadata API bodies default to a 64 KiB limit. Garment import has a separate
+25 MiB image limit plus bounded multipart overhead and writes upload chunks only
+inside the configured temporary root.
+
+## Garment import and local images
+
+Open Wardrobe and choose **Add Garment**, or navigate directly to
+`/wardrobe/add`. Muse accepts one JPEG, PNG, or WebP source photograph together
+with validated garment metadata. The server verifies the file signature,
+declared MIME type, filename suffix, dimensions, pixel count, frame count, color
+mode, complete decode, EXIF orientation, and bounded color-profile data.
+
+An acknowledged import has already stored:
+
+- the exact, never-overwritten original bytes;
+- a browser-safe normalized WebP with a maximum `1600 px` side; and
+- a WebP thumbnail with a maximum `384 px` side.
+
+The defaults reject images above 24 megapixels, a `12000 px` side, or 25 MiB.
+All limits and derivative dimensions are configurable through documented
+`MUSE_` settings. Derivatives contain no source EXIF or other unnecessary public
+metadata.
+
+Optional background cleanup runs through one bounded local worker after the
+core import succeeds. The shipped Pillow processor preserves meaningful source
+transparency and can remove a highly uniform, border-connected background when
+its conservative confidence checks pass. Otherwise the garment records a
+truthful `completed_with_fallback` state and continues using its normalized
+image. Muse does not download an ML model or require the Internet. Display
+selection is cutout, normalized, then original; grids prefer thumbnails.
+
+Import attempts use backend-owned temporary directories and durable manifests
+to coordinate atomic file promotion with the SQLite transaction. Startup
+reconciliation preserves committed media, compensates interrupted uncommitted
+promotions, clears stale temporary attempts, and resumes interrupted optional
+processing. Soft deletion does not remove any image bytes.
 
 Apply committed migrations and inspect their state with:
 
@@ -179,6 +214,10 @@ Clothing and outfits are soft-deleted. Normal queries exclude deleted records,
 while an existing saved outfit remains valid when one of its garments is
 deleted, including its primary-image reference. Soft deletion never silently
 removes garment files.
+
+The Clothing collection accepts an optional `garment_category` query parameter
+for the approved Wardrobe category navigation. Search, arbitrary filters, and
+favorites are intentionally absent.
 
 ## Verification
 
@@ -212,6 +251,19 @@ npm run test:e2e
 
 Apply frontend formatting with `npm run format`. The Playwright shell suite uses
 Chromium at the target `1280 × 800` viewport.
+
+The complete import-to-delete browser flow targets a running same-origin
+FastAPI production host. After building the frontend, migrating a disposable
+empty data root, and starting FastAPI as described below, run it in a second
+terminal with:
+
+```bash
+cd frontend
+PLAYWRIGHT_BASE_URL=http://127.0.0.1:8000 npm run test:e2e:production
+```
+
+This check performs a real multipart image import, metadata update, reload,
+media read, and soft deletion. Do not point it at a personal wardrobe database.
 
 ## Production build and startup
 
@@ -253,6 +305,11 @@ The backend keeps health diagnostics available if the frontend build is missing,
 while readiness reports the missing build. Normal Raspberry Pi runtime needs
 Python, the locked environment, the compiled frontend, SQLite data, and Chromium;
 it does not need Node.js or Internet access.
+
+Run the target-hardware acceptance procedure in
+[docs/raspberry-pi-validation.md](docs/raspberry-pi-validation.md) before calling
+a release Raspberry Pi validated. Development-machine timings and CI do not
+replace that hardware run.
 
 ## Offline runtime assets
 

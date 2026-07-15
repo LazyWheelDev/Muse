@@ -15,8 +15,6 @@ Muse should feel like a real consumer product rather than a technical prototype.
 - Clothing library
 - Categories
 - Clothing details
-- Search
-- Filters
 
 ## Outfit Builder
 
@@ -33,6 +31,10 @@ Muse should feel like a real consumer product rather than a technical prototype.
 - Local image import
 - Background removal
 - Manual categorization
+
+Local-device import is implemented before the phone QR flow. Search, arbitrary
+filters, and favorites are not part of the current MVP; category navigation is
+the Wardrobe's only collection refinement.
 
 ## Storage
 

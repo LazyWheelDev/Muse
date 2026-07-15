@@ -82,12 +82,12 @@ A task must not begin before its required dependencies are complete.
 
 ## P2.2 Clothing Data Model
 
-- [ ] Create the clothing item model
-- [ ] Add clothing categories
-- [ ] Add optional metadata fields
-- [ ] Add image reference fields
-- [ ] Add timestamps
-- [ ] Add validation rules
+- [x] Create the clothing item model
+- [x] Add clothing categories
+- [x] Add optional metadata fields
+- [x] Add image reference fields
+- [x] Add timestamps
+- [x] Add validation rules
 
 ### Required Fields
 
@@ -102,10 +102,7 @@ A task must not begin before its required dependencies are complete.
 - Size
 - Material
 - Price
-- Purchase location
-- Source URL
 - Notes
-- Favorite status
 
 ---
 
@@ -130,47 +127,42 @@ A task must not begin before its required dependencies are complete.
 
 ## P3.1 Clothing API
 
-- [ ] Create clothing items
-- [ ] List clothing items
-- [ ] Read one clothing item
-- [ ] Update clothing items
-- [ ] Delete clothing items
-- [ ] Filter by category
-- [ ] Search by name
-- [ ] Handle missing records cleanly
+- [x] Create clothing items
+- [x] List clothing items
+- [x] Read one clothing item
+- [x] Update clothing items
+- [x] Delete clothing items
+- [x] Filter by category
+- [x] Handle missing records cleanly
 
 ---
 
 ## P3.2 Wardrobe Interface
 
-- [ ] Create the wardrobe page
-- [ ] Create clothing cards
-- [ ] Display garment images
-- [ ] Display categories
-- [ ] Add empty state
-- [ ] Add loading state
-- [ ] Add error state
-- [ ] Add touch-friendly navigation
+- [x] Create the wardrobe page
+- [x] Create clothing cards
+- [x] Display garment images
+- [x] Display categories
+- [x] Add empty state
+- [x] Add loading state
+- [x] Add error state
+- [x] Add touch-friendly navigation
 
 ---
 
 ## P3.3 Clothing Details
 
-- [ ] Create the clothing details view
-- [ ] Edit clothing metadata
-- [ ] Delete a clothing item with confirmation
-- [ ] Mark an item as favorite
-- [ ] Return to the wardrobe cleanly
+- [x] Create the clothing details view
+- [x] Edit clothing metadata
+- [x] Delete a clothing item with confirmation
+- [x] Return to the wardrobe cleanly
 
 ---
 
-## P3.4 Search and Filters
+## P3.4 Deferred discovery features
 
-- [ ] Add text search
-- [ ] Add category filters
-- [ ] Add favorite filter
-- [ ] Add clear-filters control
-- [ ] Ensure filters work well on touchscreen
+Search, arbitrary filters, and favorites are deferred beyond the current MVP.
+Category navigation remains part of P3.1 and P3.2.
 
 ---
 
@@ -178,36 +170,36 @@ A task must not begin before its required dependencies are complete.
 
 ## P4.1 Local Image Upload
 
-- [ ] Accept JPEG images
-- [ ] Accept PNG images
-- [ ] Accept WebP images
-- [ ] Enforce file-size limits
-- [ ] Generate safe filenames
-- [ ] Store original images locally
-- [ ] Reject unsupported files safely
+- [x] Accept JPEG images
+- [x] Accept PNG images
+- [x] Accept WebP images
+- [x] Enforce file-size limits
+- [x] Generate safe filenames
+- [x] Store original images locally
+- [x] Reject unsupported files safely
 
 ---
 
 ## P4.2 Image Processing
 
-- [ ] Create the image-processing service
-- [ ] Normalize image orientation
-- [ ] Generate thumbnails
-- [ ] Produce a transparent PNG when possible
-- [ ] Preserve the original image
-- [ ] Provide a fallback when processing fails
+- [x] Create the image-processing service
+- [x] Normalize image orientation
+- [x] Generate thumbnails
+- [x] Produce a transparent cutout when possible
+- [x] Preserve the original image
+- [x] Provide a fallback when processing fails
 
 ---
 
 ## P4.3 Clothing Import Form
 
-- [ ] Upload an image
-- [ ] Preview the image
-- [ ] Enter a garment name
-- [ ] Select a category
-- [ ] Add optional details
-- [ ] Save the garment
-- [ ] Display clear validation errors
+- [x] Upload an image
+- [x] Preview the image
+- [x] Enter a garment name
+- [x] Select a category
+- [x] Add optional details
+- [x] Save the garment
+- [x] Display clear validation errors
 
 ---
 
@@ -254,7 +246,7 @@ If QR upload is not ready for the first stable build, local browser upload remai
 - [ ] Move garments
 - [ ] Resize garments
 - [ ] Rotate garments
-- [ ] Support width and height adjustment
+- [ ] Support one proportional scale adjustment
 - [ ] Reset garment transformation
 - [ ] Use touch-friendly controls
 

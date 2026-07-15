@@ -72,27 +72,27 @@ The operating system, browser, terminal, and technical infrastructure must remai
 
 ### Core Colors
 
-| Token | Value | Usage |
-|---|---:|---|
-| Background | `#F6EFE5` | Main application background |
-| Background Soft | `#FBF6EE` | Lighter page areas |
-| Surface | `#FFF9F1` | Cards, buttons, panels |
-| Surface Muted | `#F1E6D7` | Secondary surfaces and icon circles |
-| Border | `#E2D3BF` | Subtle component borders |
-| Champagne | `#C9A66B` | Main accent, icons, highlights |
-| Champagne Dark | `#A98249` | Pressed states and stronger accents |
-| Primary Text | `#302E2A` | Titles and primary content |
-| Secondary Text | `#756F66` | Descriptions and secondary labels |
-| Muted Text | `#A49B90` | Placeholders and inactive information |
+| Token           |     Value | Usage                                 |
+| --------------- | --------: | ------------------------------------- |
+| Background      | `#F6EFE5` | Main application background           |
+| Background Soft | `#FBF6EE` | Lighter page areas                    |
+| Surface         | `#FFF9F1` | Cards, buttons, panels                |
+| Surface Muted   | `#F1E6D7` | Secondary surfaces and icon circles   |
+| Border          | `#E2D3BF` | Subtle component borders              |
+| Champagne       | `#C9A66B` | Main accent, icons, highlights        |
+| Champagne Dark  | `#A98249` | Pressed states and stronger accents   |
+| Primary Text    | `#302E2A` | Titles and primary content            |
+| Secondary Text  | `#756F66` | Descriptions and secondary labels     |
+| Muted Text      | `#A49B90` | Placeholders and inactive information |
 
 ### Status Colors
 
-| Status | Value | Usage |
-|---|---:|---|
-| Success | `#4F7D45` | Saved states and completed actions |
-| Warning | `#A77937` | Unsaved changes or attention |
-| Danger | `#A55650` | Delete actions and errors |
-| Disabled | `#C8BFB4` | Inactive controls |
+| Status   |     Value | Usage                              |
+| -------- | --------: | ---------------------------------- |
+| Success  | `#4F7D45` | Saved states and completed actions |
+| Warning  | `#A77937` | Unsaved changes or attention       |
+| Danger   | `#A55650` | Delete actions and errors          |
+| Disabled | `#C8BFB4` | Inactive controls                  |
 
 Status colors must be used sparingly.
 

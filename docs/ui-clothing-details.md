@@ -141,6 +141,11 @@ It should:
 - Use a clean neutral background
 - Support several images when available
 
+Several images means several logical source photographs. Original, normalized,
+thumbnail, and cutout variants of one photograph are not separate carousel
+slides. For each logical image, the UI chooses cutout, then normalized, then the
+exact original as a fallback.
+
 ---
 
 ## Image Carousel
@@ -237,10 +242,12 @@ Suggested message:
 ```text
 Delete Linen Shirt?
 
-This garment will be removed from your wardrobe and from outfits that use it.
+This garment will disappear from your wardrobe. Saved outfits may still retain
+a reference to it.
 ```
 
-If the garment is used in saved outfits, Muse must clearly explain the effect before deletion.
+Deletion is a soft delete. Existing saved outfits retain a readable deleted
+reference and its image metadata; the action does not purge original media.
 
 Deletion must never happen after one accidental press.
 
@@ -476,6 +483,12 @@ The interface must clearly distinguish:
 
 ## Automatic Detection
 
+Automatic metadata detection is not implemented in the current MVP. The
+interface must not show the notice below, label a value as detected, or reserve
+an active control for this capability unless real detection data exists.
+
+The following behavior is retained as future guidance only.
+
 Muse may analyze an imported garment locally and suggest information such as:
 
 - Category
@@ -519,7 +532,6 @@ Offline functionality includes:
 - Saving changes
 - Deleting garments
 - Opening Outfit Builder
-- Viewing automatically detected local information
 
 Future online lookup or product search features must remain optional.
 
@@ -697,7 +709,7 @@ ClothingDetailsPage
 │       │   └── InformationRow
 │       ├── AdditionalInformationSection
 │       │   └── InformationRow
-│       └── AutoDetectionNotice
+│       └── ProcessingStatusNotice
 ├── DeleteConfirmationDialog
 ├── UnsavedChangesDialog
 └── BackgroundMonogram
@@ -722,7 +734,7 @@ The Clothing Details screen is complete when:
 - Fields remain read-only until Edit is activated.
 - Editing and cancellation work correctly.
 - Save status accurately reflects the data state.
-- Automatic detection information is clearly identified.
+- Image processing and fallback information is truthful and non-blocking.
 - Delete requires confirmation.
 - Outfit Builder receives the correct garment.
 - Unsaved changes are protected before navigation.

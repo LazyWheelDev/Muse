@@ -166,7 +166,7 @@ When pressed:
 
 1. Muse opens the Outfit Builder.
 2. The currently selected garment is added automatically.
-3. The garment is placed in the correct body category.
+3. The garment receives its separate suggested Outfit Builder body zone.
 4. The Outfit Builder remembers that the user came from Wardrobe.
 5. A contextual Wardrobe return button may appear in Outfit Builder.
 
@@ -174,9 +174,9 @@ Examples:
 
 ```text
 Hat   → Head
-Shirt → Top
-Pants → Pants
-Shoes → Shoes
+Shirt → Upper body
+Pants → Lower body
+Shoes → Feet
 ```
 
 The selected garment must remain available when the Outfit Builder opens.
@@ -234,7 +234,7 @@ The right panel displays clothing categories as large touch cards.
 
 Initial categories include:
 
-- Head
+- Hat
 - Scarf
 - Shirt
 - Dress
@@ -333,10 +333,10 @@ The button must remain clearly visible and easy to touch.
 
 ## Garment Import Entry
 
-The Add Garment action opens a choice between:
+The Add Garment action opens the local-device garment import directly.
 
-- Upload from the Muse device
-- Upload from a phone through QR code
+Phone upload through a QR code remains a later MVP milestone. It must not leave
+an inactive or misleading choice in the current Wardrobe interface.
 
 The Wardrobe screen must refresh automatically after a new garment is saved.
 

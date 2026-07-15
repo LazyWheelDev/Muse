@@ -125,14 +125,14 @@ The Home interface and its four primary cards appear smoothly.
 
 Recommended duration:
 
-| Stage | Approximate Duration |
-|---|---:|
-| Droplet fall | 500–700 ms |
-| M fill | 400–600 ms |
-| Letter assembly | 700–1000 ms |
-| Tagline reveal | 300–500 ms |
-| Final pause | 400–700 ms |
-| Home transition | 400–600 ms |
+| Stage           | Approximate Duration |
+| --------------- | -------------------: |
+| Droplet fall    |           500–700 ms |
+| M fill          |           400–600 ms |
+| Letter assembly |          700–1000 ms |
+| Tagline reveal  |           300–500 ms |
+| Final pause     |           400–700 ms |
+| Home transition |           400–600 ms |
 
 Target total duration:
 

@@ -76,7 +76,6 @@ From the garment details page the user can:
 
 - Add the garment to an outfit
 - Edit information
-- Mark as favorite
 - Delete the garment
 - Return to the wardrobe
 
@@ -89,11 +88,11 @@ Wardrobe
     ↓
 Add Garment
     ↓
-Choose Import Method
-
-• Upload from Device
-• Upload from Phone (QR Code)
+Upload from Device
 ```
+
+Phone upload through a QR code remains part of the intended final MVP, but it is
+implemented after the complete local-device flow.
 
 Then:
 
