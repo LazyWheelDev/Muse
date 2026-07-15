@@ -1,4 +1,5 @@
 dist/
+dist-phone/
 coverage/
 node_modules/
 playwright-report/

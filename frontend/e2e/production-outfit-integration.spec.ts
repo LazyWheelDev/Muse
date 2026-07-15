@@ -93,7 +93,7 @@ async function importGarment(
   page: Page,
   { name, category, image }: { name: string; category: string; image: string },
 ): Promise<ImportedGarment> {
-  const navigation = await page.goto('/wardrobe/add');
+  const navigation = await page.goto('/wardrobe/add/device');
   expect(navigation?.status()).toBe(200);
   await expect(page.getByRole('heading', { level: 1, name: 'Add Garment' })).toBeVisible();
   await expectNoHorizontalOverflow(page);

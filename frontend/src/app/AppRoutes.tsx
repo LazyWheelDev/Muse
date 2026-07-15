@@ -8,7 +8,9 @@ import { SavedOutfitsPage } from '../pages/SavedOutfitsPage';
 import { SettingsPage } from '../pages/SettingsPage';
 import { WardrobePage } from '../pages/WardrobePage';
 import { AddGarmentPage } from '../pages/AddGarmentPage';
+import { AddGarmentMethodPage } from '../pages/AddGarmentMethodPage';
 import { ClothingDetailsPage } from '../pages/ClothingDetailsPage';
+import { PhoneUploadPage } from '../pages/PhoneUploadPage';
 import { routePaths } from './routeConfig';
 
 export const museRoutes: RouteObject[] = [
@@ -18,7 +20,9 @@ export const museRoutes: RouteObject[] = [
     children: [
       { index: true, element: <HomePage /> },
       { path: routePaths.wardrobe, element: <WardrobePage /> },
-      { path: routePaths.addGarment, element: <AddGarmentPage /> },
+      { path: routePaths.addGarment, element: <AddGarmentMethodPage /> },
+      { path: routePaths.addGarmentDevice, element: <AddGarmentPage /> },
+      { path: routePaths.addGarmentPhone, element: <PhoneUploadPage /> },
       { path: `${routePaths.wardrobe}/:garmentId`, element: <ClothingDetailsPage /> },
       { path: routePaths.outfitBuilder, element: <OutfitBuilderPage /> },
       { path: routePaths.savedOutfits, element: <SavedOutfitsPage /> },

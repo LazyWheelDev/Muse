@@ -34,7 +34,7 @@ afterEach(() => {
 describe('AddGarmentPage', () => {
   it('validates required fields and focuses the visible image chooser', async () => {
     const user = userEvent.setup();
-    renderApp('/wardrobe/add');
+    renderApp('/wardrobe/add/device');
     await user.click(screen.getByRole('button', { name: 'Import garment' }));
     expect(screen.getByText('Choose a garment image.')).toBeVisible();
     expect(screen.getByText('Enter a garment name.')).toBeVisible();
@@ -44,7 +44,7 @@ describe('AddGarmentPage', () => {
 
   it('previews, replaces, and removes a local selection without exposing a path', async () => {
     const user = userEvent.setup();
-    renderApp('/wardrobe/add');
+    renderApp('/wardrobe/add/device');
     const input = screen.getByLabelText(/Choose a garment photograph/u);
     const image = new File(['image bytes'], 'linen-shirt.webp', { type: 'image/webp' });
     await user.upload(input, image);
@@ -64,7 +64,7 @@ describe('AddGarmentPage', () => {
 
   it('accepts a suffix-backed browser file with an empty advisory MIME type', async () => {
     const user = userEvent.setup();
-    renderApp('/wardrobe/add');
+    renderApp('/wardrobe/add/device');
     await user.upload(
       screen.getByLabelText(/Choose a garment photograph/u),
       new File(['bytes'], 'garment.png', { type: '' }),
@@ -83,7 +83,7 @@ describe('AddGarmentPage', () => {
         }),
     );
     const user = userEvent.setup();
-    const { router } = renderApp('/wardrobe/add');
+    const { router } = renderApp('/wardrobe/add/device');
     await user.upload(
       screen.getByLabelText(/Choose a garment photograph/u),
       new File(['bytes'], 'garment.jpg', { type: 'image/jpeg' }),
@@ -101,7 +101,7 @@ describe('AddGarmentPage', () => {
     importMock.mockResolvedValue(decodeClothingDetail(rawClothingDetail));
     const user = userEvent.setup();
     const { router } = renderApp(
-      '/wardrobe/add?returnTo=%2Fwardrobe%3Fview%3Dgrid%26preserveDraft%3D1',
+      '/wardrobe/add/device?returnTo=%2Fwardrobe%3Fview%3Dgrid%26preserveDraft%3D1',
     );
     await user.upload(
       screen.getByLabelText(/Choose a garment photograph/u),
@@ -119,7 +119,7 @@ describe('AddGarmentPage', () => {
       new ApiClientError({ code: 'backend_unavailable', message: 'Try the local service again.' }),
     );
     const user = userEvent.setup();
-    renderApp('/wardrobe/add');
+    renderApp('/wardrobe/add/device');
     await user.upload(
       screen.getByLabelText(/Choose a garment photograph/u),
       new File(['bytes'], 'garment.jpg', { type: 'image/jpeg' }),
@@ -148,7 +148,7 @@ describe('AddGarmentPage', () => {
       }),
     );
     const user = userEvent.setup();
-    renderApp('/wardrobe/add');
+    renderApp('/wardrobe/add/device');
     const imageInput = screen.getByLabelText(/Choose a garment photograph/u);
     await user.upload(
       imageInput,

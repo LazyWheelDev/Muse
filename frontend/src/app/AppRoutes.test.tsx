@@ -16,6 +16,7 @@ describe('Muse routes', () => {
     ['/saved-outfits', 'Saved Outfits'],
     ['/settings', 'Settings'],
     ['/wardrobe/add', 'Add Garment'],
+    ['/wardrobe/add/device', 'Add Garment'],
   ] as const)('renders %s with the %s page heading', (path, heading) => {
     renderApp(path);
     expect(screen.getByRole('main')).toBeVisible();

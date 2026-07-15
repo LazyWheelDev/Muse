@@ -2,6 +2,8 @@ export const routePaths = {
   home: '/',
   wardrobe: '/wardrobe',
   addGarment: '/wardrobe/add',
+  addGarmentDevice: '/wardrobe/add/device',
+  addGarmentPhone: '/wardrobe/add/phone',
   clothingDetails: (garmentId: number) => `/wardrobe/${garmentId}` as const,
   outfitBuilder: '/outfit-builder',
   savedOutfits: '/saved-outfits',

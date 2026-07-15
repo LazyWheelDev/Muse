@@ -9,6 +9,7 @@ export default tseslint.config(
   {
     ignores: [
       'dist',
+      'dist-phone',
       'coverage',
       'node_modules',
       'playwright-report',
@@ -42,7 +43,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['src/**/*.{ts,tsx}'],
+    files: ['src/**/*.{ts,tsx}', 'mobile/src/**/*.{ts,tsx}'],
     languageOptions: {
       globals: globals.browser,
     },

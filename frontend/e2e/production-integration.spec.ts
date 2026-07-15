@@ -100,6 +100,8 @@ test('a garment persists through the complete local production workflow', async 
     await page.getByRole('link', { name: 'Add Garment' }).click();
     await expect(page).toHaveURL(/\/wardrobe\/add/u);
     await expect(page.getByRole('heading', { level: 1, name: 'Add Garment' })).toBeVisible();
+    await page.getByRole('link', { name: /Upload on this device/u }).click();
+    await expect(page).toHaveURL(/\/wardrobe\/add\/device/u);
     await expectNoHorizontalOverflow(page);
 
     const fileInput = page.locator('input[type="file"]');

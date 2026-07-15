@@ -1,0 +1,123 @@
+.page {
+  block-size: calc(100dvh - (2 * var(--space-4)));
+  min-block-size: calc(100dvh - (2 * var(--space-4)));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+.choicePanel {
+  inline-size: min(100%, 62rem);
+  min-block-size: 0;
+  margin-inline: auto;
+  padding: var(--space-4);
+  display: grid;
+  place-content: center;
+  gap: var(--space-4);
+  background: color-mix(in srgb, var(--color-surface) 92%, transparent);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-large);
+  box-shadow: var(--shadow-medium);
+}
+
+.introduction {
+  max-inline-size: 42rem;
+  margin-inline: auto;
+  text-align: center;
+}
+
+.introduction h2,
+.introduction p {
+  margin: 0;
+}
+
+.introduction h2 {
+  margin-block: var(--space-1);
+  font-family: var(--font-family-display);
+  font-size: var(--font-size-3xl);
+  font-weight: var(--font-weight-medium);
+}
+
+.introduction p {
+  color: var(--color-text-secondary);
+}
+
+.eyebrow {
+  color: var(--color-champagne-dark) !important;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.methodGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.methodCard {
+  min-block-size: 16rem;
+  padding: var(--space-4);
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: var(--space-2);
+  color: var(--color-text-primary);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-large);
+  box-shadow: var(--shadow-small);
+  text-align: center;
+  text-decoration: none;
+  transition:
+    border-color var(--motion-fast) var(--motion-ease-out),
+    box-shadow var(--motion-fast) var(--motion-ease-out),
+    transform var(--motion-fast) var(--motion-ease-out);
+}
+
+.methodCard:active {
+  border-color: var(--color-champagne-dark);
+  box-shadow: none;
+  transform: scale(0.985);
+}
+
+.methodCard strong {
+  font-family: var(--font-family-display);
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-medium);
+}
+
+.methodCard > span:last-child {
+  max-inline-size: 22rem;
+  color: var(--color-text-secondary);
+}
+
+.iconCircle {
+  inline-size: 5rem;
+  block-size: 5rem;
+  display: grid;
+  place-items: center;
+  color: var(--color-champagne-dark);
+  background: var(--color-surface-muted);
+  border-radius: 50%;
+}
+
+.iconCircle svg {
+  inline-size: 2.5rem;
+  block-size: 2.5rem;
+}
+
+@media (max-width: 48rem) {
+  .page {
+    block-size: auto;
+  }
+
+  .choicePanel {
+    padding: var(--space-3);
+  }
+
+  .methodGrid {
+    grid-template-columns: 1fr;
+  }
+}
