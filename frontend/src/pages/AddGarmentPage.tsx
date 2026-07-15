@@ -17,7 +17,11 @@ import {
   garmentCategories,
 } from '../features/clothing/model';
 import type { BodyZone, ClothingWritePayload, GarmentCategory } from '../features/clothing/model';
-import { buildWardrobePath, safeWardrobeReturnPath } from '../features/clothing/wardrobeContext';
+import {
+  buildWardrobePath,
+  parseWardrobePath,
+  safeWardrobeReturnPath,
+} from '../features/clothing/wardrobeContext';
 import { useUnsavedChanges } from '../features/clothing/useUnsavedChanges';
 import styles from './AddGarmentPage.module.css';
 
@@ -243,7 +247,12 @@ export function AddGarmentPage() {
       setBodyZoneTouched(false);
       window.setTimeout(() => {
         void navigate(
-          buildWardrobePath({ category: item.garmentCategory, itemId: item.id, view: 'carousel' }),
+          buildWardrobePath({
+            ...parseWardrobePath(returnTo),
+            category: item.garmentCategory,
+            itemId: item.id,
+            view: 'carousel',
+          }),
           { replace: true },
         );
       }, 0);

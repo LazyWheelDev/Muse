@@ -97,6 +97,23 @@ describe('AddGarmentPage', () => {
     expect(router.state.location.search).toContain('item=1');
   });
 
+  it('preserves the Builder draft marker after importing into a Wardrobe return context', async () => {
+    importMock.mockResolvedValue(decodeClothingDetail(rawClothingDetail));
+    const user = userEvent.setup();
+    const { router } = renderApp(
+      '/wardrobe/add?returnTo=%2Fwardrobe%3Fview%3Dgrid%26preserveDraft%3D1',
+    );
+    await user.upload(
+      screen.getByLabelText(/Choose a garment photograph/u),
+      new File(['bytes'], 'garment.jpg', { type: 'image/jpeg' }),
+    );
+    await user.type(screen.getByRole('textbox', { name: 'Name' }), 'Linen Shirt');
+    await user.click(screen.getByRole('button', { name: 'Import garment' }));
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/wardrobe'));
+    expect(router.state.location.search).toBe('?category=top&item=1&preserveDraft=1');
+  });
+
   it('reuses the idempotency key on an unchanged retry and changes it with the draft', async () => {
     importMock.mockRejectedValue(
       new ApiClientError({ code: 'backend_unavailable', message: 'Try the local service again.' }),

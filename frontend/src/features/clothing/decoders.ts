@@ -10,6 +10,7 @@ import type {
   ImageProcessingState,
 } from './model';
 import { bodyZones, garmentCategories } from './model';
+import { decodeSafeLocalMediaUrl } from '../../api/mediaUrl';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -67,43 +68,6 @@ function timestamp(value: unknown, label: string): string {
   return result;
 }
 
-function safeMediaUrl(value: unknown): string {
-  const url = string(value, 'content_url');
-  if (
-    !url.startsWith('/api/v1/media/') ||
-    url.startsWith('//') ||
-    url.includes('\\') ||
-    url.includes('?') ||
-    url.includes('#') ||
-    /(?:^|\/)(?:\.{1,2})(?:\/|$)/u.test(url)
-  ) {
-    throw new Error('content_url must be a safe local media URL.');
-  }
-  let decoded = url;
-  for (let pass = 0; pass < 3; pass += 1) {
-    try {
-      const next = decodeURIComponent(decoded);
-      if (next === decoded) {
-        break;
-      }
-      decoded = next;
-    } catch {
-      throw new Error('content_url contains invalid encoding.');
-    }
-  }
-  if (
-    decoded.includes('\\') ||
-    decoded.split('/').some((segment) => segment === '.' || segment === '..') ||
-    [...decoded].some((character) => {
-      const codePoint = character.codePointAt(0) ?? 0;
-      return codePoint <= 31 || codePoint === 127;
-    })
-  ) {
-    throw new Error('content_url contains an unsafe path.');
-  }
-  return url;
-}
-
 const imageKinds = ['original', 'normalized', 'thumbnail', 'cutout'] as const;
 const processingStates = [
   'not_requested',
@@ -134,7 +98,7 @@ export function decodeClothingImage(value: unknown, fallbackOrder = 0): Clothing
     height: positiveInteger(image.height, 'height'),
     byteSize: positiveInteger(image.byte_size, 'byte_size'),
     isPrimary: boolean(image.is_primary, 'is_primary'),
-    contentUrl: safeMediaUrl(image.content_url),
+    contentUrl: decodeSafeLocalMediaUrl(image.content_url, 'content_url'),
     createdAt: timestamp(image.created_at, 'created_at'),
     updatedAt: timestamp(image.updated_at, 'updated_at'),
   };

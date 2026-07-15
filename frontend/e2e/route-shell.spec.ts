@@ -44,6 +44,16 @@ test('the Muse route shell fits the 1280 × 800 kiosk viewport without horizonta
       body: JSON.stringify({ items: [], total: 0, limit: 100, offset: 0 }),
     });
   });
+  await page.route('**/api/v1/outfits*', async (route) => {
+    const requestUrl = new URL(route.request().url());
+    const limit = Number(requestUrl.searchParams.get('limit') ?? '24');
+    const offset = Number(requestUrl.searchParams.get('offset') ?? '0');
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ items: [], total: 0, limit, offset }),
+    });
+  });
 
   for (const route of routeCases) {
     await test.step(route.path, async () => {

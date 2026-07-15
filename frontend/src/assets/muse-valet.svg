@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 800" role="img" aria-labelledby="title description">
+  <title id="title">Muse fashion mannequin</title>
+  <desc id="description">A neutral, stylized full-length fashion mannequin for composing outfits.</desc>
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#eee8df" />
+      <stop offset="1" stop-color="#d8cec1" />
+    </linearGradient>
+  </defs>
+
+  <g fill="url(#body)" stroke="#c6baac" stroke-width="4" stroke-linejoin="round">
+    <ellipse cx="320" cy="87" rx="44" ry="44" />
+    <rect x="301" y="126" width="38" height="51" rx="12" />
+    <path d="M257 174h126l34 215-54 51h-86l-54-51z" />
+    <path d="m257 184-35 12-63 232 38 11 77-204z" />
+    <path d="m383 184 35 12 63 232-38 11-77-204z" />
+    <ellipse cx="176" cy="436" rx="26" ry="20" />
+    <ellipse cx="464" cy="436" rx="26" ry="20" />
+    <path d="m278 435 40 0-8 285h-53z" />
+    <path d="m322 435 40 0 21 285h-53z" />
+    <rect x="226" y="704" width="85" height="52" rx="20" />
+    <rect x="329" y="704" width="85" height="52" rx="20" />
+  </g>
+  <g fill="none" stroke="#e8dfd3" stroke-width="3" stroke-linecap="round">
+    <path d="M278 435h84" />
+    <path d="M320 184v238" opacity="0.55" />
+  </g>
+</svg>

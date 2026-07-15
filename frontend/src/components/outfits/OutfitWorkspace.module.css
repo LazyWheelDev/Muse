@@ -1,0 +1,66 @@
+.workspace {
+  position: relative;
+  inline-size: min(100%, 28rem);
+  block-size: auto;
+  max-block-size: 100%;
+  aspect-ratio: 4 / 5;
+  margin-inline: auto;
+  overflow: hidden;
+  background: radial-gradient(
+    circle at 50% 45%,
+    rgb(255 249 241 / 88%),
+    rgb(246 239 229 / 38%) 58%,
+    transparent 72%
+  );
+  border-radius: var(--radius-large);
+  touch-action: none;
+  user-select: none;
+}
+
+.silhouette {
+  position: absolute;
+  inset: 0;
+  block-size: 100%;
+  inline-size: 100%;
+  max-inline-size: none;
+  object-fit: contain;
+  opacity: 0.78;
+  pointer-events: none;
+}
+
+.canvas {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  max-inline-size: none;
+  cursor: grab;
+  touch-action: none;
+}
+
+.canvas:active {
+  cursor: grabbing;
+}
+
+.loadingStatus,
+.emptyHint {
+  position: absolute;
+  z-index: 2;
+  inset-inline: 12%;
+  inset-block-end: var(--space-2);
+  margin: 0;
+  padding: var(--space-1) var(--space-2);
+  color: var(--color-text-secondary);
+  background: rgb(255 249 241 / 86%);
+  border: 1px solid rgb(226 211 191 / 72%);
+  border-radius: var(--radius-pill);
+  font-size: var(--font-size-sm);
+  text-align: center;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas {
+    scroll-behavior: auto;
+  }
+}

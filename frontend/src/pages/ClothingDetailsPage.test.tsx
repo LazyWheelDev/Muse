@@ -72,6 +72,18 @@ describe('ClothingDetailsPage', () => {
     expect(JSON.parse(requestBody(patchCall?.[1]))).toEqual({ name: 'Summer Linen Shirt' });
   });
 
+  it('propagates a validated Builder draft marker through the Details handoff', async () => {
+    vi.stubGlobal('fetch', detailFetchMock());
+    renderApp('/wardrobe/1?returnTo=%2Fwardrobe%3Fitem%3D1%26preserveDraft%3D1');
+
+    expect(await screen.findByText('100% Linen')).toBeVisible();
+    const builderLink = screen.getByRole('link', { name: 'Go to Outfit Builder' });
+    const target = new URL(builderLink.getAttribute('href') ?? '', 'http://muse.test');
+    expect(target.searchParams.get('garment')).toBe('1');
+    expect(target.searchParams.get('preserveDraft')).toBe('1');
+    expect(target.searchParams.get('returnTo')).toBe('/wardrobe?item=1&preserveDraft=1');
+  });
+
   it('shows and focuses a currency validation error', async () => {
     vi.stubGlobal('fetch', detailFetchMock());
     const user = userEvent.setup();

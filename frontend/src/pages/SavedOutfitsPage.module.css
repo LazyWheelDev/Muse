@@ -1,0 +1,180 @@
+.page {
+  block-size: calc(100vh - (2 * var(--space-4)));
+  block-size: calc(100dvh - (2 * var(--space-4)));
+  min-block-size: 34rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.content {
+  flex: 1;
+  min-block-size: 0;
+}
+
+.gridScroller {
+  block-size: 100%;
+  max-inline-size: 59rem;
+  margin-inline: auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-behavior: smooth;
+  scrollbar-color: var(--color-champagne) transparent;
+  scrollbar-width: thin;
+}
+
+.outfitGrid {
+  margin: 0;
+  padding: 0.125rem 0.25rem var(--space-3);
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+  list-style: none;
+}
+
+.outfitCard {
+  position: relative;
+  min-block-size: 12.2rem;
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  color: var(--color-text-primary);
+  background: rgb(255 249 241 / 90%);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-medium);
+  box-shadow: var(--shadow-medium);
+  text-decoration: none;
+  transition:
+    border-color var(--motion-fast) var(--motion-ease-out),
+    box-shadow var(--motion-fast) var(--motion-ease-out),
+    transform var(--motion-fast) var(--motion-ease-out);
+}
+
+.outfitCard:active {
+  border-color: var(--color-champagne-dark);
+  box-shadow: none;
+  transform: scale(0.985);
+}
+
+.preview {
+  position: relative;
+  min-block-size: 9rem;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle at center, rgb(255 249 241 / 96%), rgb(241 230 215 / 60%));
+}
+
+.preview img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: contain;
+}
+
+.previewFallback {
+  inline-size: 100%;
+  block-size: 100%;
+  padding: var(--space-2);
+  display: grid;
+  place-items: center;
+  gap: var(--space-1);
+  color: var(--color-text-secondary);
+  text-align: center;
+}
+
+.previewFallback img {
+  block-size: 6.5rem;
+  inline-size: auto;
+  opacity: 0.64;
+}
+
+.previewFallback span {
+  font-size: var(--font-size-sm);
+}
+
+.cardFooter {
+  min-block-size: var(--touch-target-min);
+  padding: 0.5rem var(--space-2);
+  display: grid;
+  place-items: center;
+  background: rgb(255 249 241 / 94%);
+  border-block-start: 1px solid var(--color-border);
+  text-align: center;
+}
+
+.cardFooter strong {
+  max-inline-size: 100%;
+  overflow: hidden;
+  font-family: var(--font-family-display);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.emptyState {
+  block-size: 100%;
+  max-inline-size: 42rem;
+  margin-inline: auto;
+  padding: var(--space-4);
+  display: grid;
+  place-items: center;
+}
+
+.emptyCard {
+  inline-size: 100%;
+  padding: var(--space-6);
+  display: grid;
+  justify-items: center;
+  gap: var(--space-2);
+  color: var(--color-text-secondary);
+  background: rgb(255 249 241 / 86%);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-large);
+  box-shadow: var(--shadow-medium);
+  text-align: center;
+}
+
+.emptyCard h2 {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-family: var(--font-family-display);
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-medium);
+}
+
+.emptyCard p {
+  margin: 0;
+}
+
+.emptySilhouette {
+  block-size: 9rem;
+  inline-size: auto;
+  opacity: 0.72;
+}
+
+@media (max-width: 54rem) {
+  .page {
+    block-size: auto;
+  }
+
+  .gridScroller {
+    overflow: visible;
+  }
+
+  .outfitGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 34rem) {
+  .outfitGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gridScroller {
+    scroll-behavior: auto;
+  }
+}

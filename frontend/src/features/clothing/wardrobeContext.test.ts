@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildWardrobePath, parseWardrobeContext, safeWardrobeReturnPath } from './wardrobeContext';
+import {
+  buildWardrobePath,
+  parseWardrobeContext,
+  parseWardrobePath,
+  safeWardrobeReturnPath,
+} from './wardrobeContext';
 
 describe('Wardrobe URL context', () => {
   it('round-trips the selected category, item, and grid view', () => {
@@ -15,6 +20,23 @@ describe('Wardrobe URL context', () => {
       itemId: null,
       view: 'carousel',
     });
+  });
+
+  it('preserves an explicit Outfit Builder draft round-trip marker', () => {
+    const state = parseWardrobeContext('?category=top&item=42&view=grid&preserveDraft=1');
+    expect(state).toEqual({
+      category: 'top',
+      itemId: 42,
+      preserveOutfitDraft: true,
+      view: 'grid',
+    });
+    expect(buildWardrobePath(state)).toBe(
+      '/wardrobe?category=top&item=42&view=grid&preserveDraft=1',
+    );
+    expect(safeWardrobeReturnPath(buildWardrobePath(state))).toBe(
+      '/wardrobe?category=top&item=42&view=grid&preserveDraft=1',
+    );
+    expect(parseWardrobePath(buildWardrobePath(state))).toEqual(state);
   });
 
   it.each([

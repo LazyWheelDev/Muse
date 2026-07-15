@@ -3,7 +3,8 @@ import { render } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 
 import { museRoutes } from '../app/AppRoutes';
-import { createMuseQueryClient } from '../features/clothing/queries';
+import { createMuseQueryClient } from '../app/queryClient';
+import { OutfitBuilderProvider } from '../features/outfit-builder/OutfitBuilderProvider';
 
 export function renderApp(initialEntry: string) {
   const queryClient = createMuseQueryClient();
@@ -13,7 +14,9 @@ export function renderApp(initialEntry: string) {
   const router = createMemoryRouter(museRoutes, { initialEntries: [initialEntry] });
   const result = render(
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <OutfitBuilderProvider>
+        <RouterProvider router={router} />
+      </OutfitBuilderProvider>
     </QueryClientProvider>,
   );
   return { ...result, queryClient, router };

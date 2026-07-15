@@ -43,6 +43,7 @@ import type { ClothingItemSummary, GarmentCategory } from '../features/clothing/
 import { useClothingList, useDeleteClothing } from '../features/clothing/queries';
 import {
   buildWardrobePath,
+  PRESERVE_OUTFIT_DRAFT_PARAMETER,
   useWardrobeContext,
   withReturnTo,
 } from '../features/clothing/wardrobeContext';
@@ -177,11 +178,14 @@ export function WardrobePage() {
     if (selectedItem !== null) {
       parameters.set('garment', String(selectedItem.id));
     }
+    if (state.preserveOutfitDraft === true) {
+      parameters.set(PRESERVE_OUTFIT_DRAFT_PARAMETER, '1');
+    }
     return `${routePaths.outfitBuilder}?${parameters.toString()}`;
-  }, [selectedItem, wardrobePath]);
+  }, [selectedItem, state.preserveOutfitDraft, wardrobePath]);
 
   function selectCategory(category: GarmentCategory | 'all') {
-    update({ category, itemId: null, view: 'carousel' });
+    update({ ...state, category, itemId: null, view: 'carousel' });
     setShowMore(false);
   }
 

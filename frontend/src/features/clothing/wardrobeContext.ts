@@ -6,11 +6,13 @@ import type { GarmentCategory } from './model';
 
 export type WardrobeCategory = GarmentCategory | 'all';
 export type WardrobeView = 'carousel' | 'grid';
+export const PRESERVE_OUTFIT_DRAFT_PARAMETER = 'preserveDraft';
 
 export interface WardrobeContextState {
   category: WardrobeCategory;
   itemId: number | null;
   view: WardrobeView;
+  preserveOutfitDraft?: boolean;
 }
 
 function parseCategory(value: string | null): WardrobeCategory {
@@ -33,7 +35,22 @@ export function parseWardrobeContext(search: string | URLSearchParams): Wardrobe
     category: parseCategory(parameters.get('category')),
     itemId: parseItemId(parameters.get('item')),
     view: parameters.get('view') === 'grid' ? 'grid' : 'carousel',
+    ...(parameters.get(PRESERVE_OUTFIT_DRAFT_PARAMETER) === '1'
+      ? { preserveOutfitDraft: true }
+      : {}),
   };
+}
+
+export function parseWardrobePath(value: string): WardrobeContextState {
+  try {
+    const parsed = new URL(value, 'http://muse.local');
+    if (parsed.origin === 'http://muse.local' && parsed.pathname === '/wardrobe') {
+      return parseWardrobeContext(parsed.searchParams);
+    }
+  } catch {
+    // Invalid or non-local values normalize to the default Wardrobe context.
+  }
+  return parseWardrobeContext('');
 }
 
 export function buildWardrobePath(state: WardrobeContextState): string {
@@ -46,6 +63,9 @@ export function buildWardrobePath(state: WardrobeContextState): string {
   }
   if (state.view === 'grid') {
     parameters.set('view', 'grid');
+  }
+  if (state.preserveOutfitDraft === true) {
+    parameters.set(PRESERVE_OUTFIT_DRAFT_PARAMETER, '1');
   }
   const search = parameters.toString();
   return search ? `/wardrobe?${search}` : '/wardrobe';

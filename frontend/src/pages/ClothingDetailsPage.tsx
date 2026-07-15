@@ -56,7 +56,11 @@ import {
   useDeleteClothing,
   useUpdateClothing,
 } from '../features/clothing/queries';
-import { safeWardrobeReturnPath } from '../features/clothing/wardrobeContext';
+import {
+  parseWardrobePath,
+  PRESERVE_OUTFIT_DRAFT_PARAMETER,
+  safeWardrobeReturnPath,
+} from '../features/clothing/wardrobeContext';
 import { useUnsavedChanges } from '../features/clothing/useUnsavedChanges';
 import styles from './ClothingDetailsPage.module.css';
 
@@ -359,6 +363,9 @@ function ClothingDetailsContent({
 
   const outfitBuilderPath = useMemo(() => {
     const parameters = new URLSearchParams({ garment: String(itemId), returnTo });
+    if (parseWardrobePath(returnTo).preserveOutfitDraft === true) {
+      parameters.set(PRESERVE_OUTFIT_DRAFT_PARAMETER, '1');
+    }
     return `${routePaths.outfitBuilder}?${parameters.toString()}`;
   }, [itemId, returnTo]);
 
@@ -640,7 +647,9 @@ function ClothingDetailsContent({
                       setPristine(draft);
                       setEditing(false);
                       setConfirmDelete(false);
-                      window.setTimeout(() => navigate(returnTo, { replace: true }), 0);
+                      window.setTimeout(() => {
+                        void navigate(returnTo, { replace: true });
+                      }, 0);
                     },
                   },
                 )

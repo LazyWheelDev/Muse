@@ -7,7 +7,7 @@ const baseURL = externalBaseUrl || previewBaseUrl;
 
 export default defineConfig({
   testDir: './e2e',
-  ...(externalBaseUrl ? {} : { testIgnore: ['**/production-integration.spec.ts'] }),
+  ...(externalBaseUrl ? {} : { testIgnore: ['**/production*-integration.spec.ts'] }),
   outputDir: 'test-results/playwright',
   fullyParallel: true,
   forbidOnly: isCi,
