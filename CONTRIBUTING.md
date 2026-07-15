@@ -81,6 +81,8 @@ Useful focused commands are:
 uv run ruff format .
 uv run pytest -m unit --no-cov
 uv run pytest -m integration --no-cov
+uv run pytest tests/test_outfit_preview_renderer.py --no-cov
+uv run pytest tests/test_outfit_previews_api.py --no-cov
 ```
 
 Before handing off frontend changes, run:
@@ -107,8 +109,10 @@ cd frontend
 PLAYWRIGHT_BASE_URL=http://127.0.0.1:8000 npm run test:e2e:production
 ```
 
-The test imports, edits, reloads, and soft-deletes its own garment. Never target
-an existing personal or production wardrobe.
+The suite imports, edits, reloads, and soft-deletes its own garments, then
+builds, previews, updates, copies, and deletes its own outfits. Run only the P5
+cross-stack check with `npm run test:e2e:production:p5` under the same disposable
+host configuration. Never target an existing personal or production wardrobe.
 
 Run both suites for cross-stack changes. GitHub Actions performs locked installs,
 all static checks and tests, a clean-database migration check, the frontend
@@ -139,6 +143,17 @@ test through FastAPI.
 - Keep optional processing outside long SQLite transactions. Any change to the
   import manifest or reconciliation protocol requires injected-failure and
   restart tests.
+- Render outfit previews only through the preview coordinator. Generated files
+  must use a new immutable name, private staging plus a durable manifest, atomic
+  promotion, short database ownership transaction, and compensating cleanup.
+  Never overwrite a registered preview in place.
+- Treat every outfit row, including a soft-deleted row, as the owner of its
+  registered preview. Do not remove that file until an explicit permanent
+  retention policy replaces the current soft-delete behavior.
+- Preserve preview failure isolation: a failed create must leave no outfit, and
+  a failed update must preserve the previous row and preview. Changes to preview
+  staging, cleanup, or reconciliation require injected-failure and restart
+  coverage.
 - Do not call SQLAlchemy `metadata.create_all()` as a runtime migration shortcut.
 
 ### Schema changes
@@ -173,6 +188,9 @@ and production environments and deliberately leaves media in place.
   top-left origin, and remain in `[0, 1]`.
 - Placement uses one proportional scale value and an explicit layer.
 - Several garments may occupy the same body zone.
+- The logical outfit workspace is `640 × 800`; generated previews are
+  `600 × 750` lossless WebP files. Positive rotation is clockwise and layers
+  render from lowest/back to highest/front.
 - Soft-deleted garments are excluded from Wardrobe queries, but existing outfit
   references remain readable. Never delete their files implicitly.
 
@@ -193,6 +211,20 @@ and production environments and deliberately leaves media in place.
 - Keep server state in TanStack Query and Wardrobe navigation context in
   validated URL parameters. Invalidate clothing collections after import,
   update, and soft deletion rather than maintaining a competing global store.
+- Keep the Outfit Builder draft in its single reducer-backed provider. Do not
+  copy editor state into TanStack Query or introduce a second store. Update the
+  versioned, validated, bounded session codec whenever the persisted draft
+  shape changes.
+- Keep placement math in `features/outfit-builder/model.ts` aligned with the
+  backend renderer: logical canvas dimensions, body-zone base widths, center
+  coordinates, proportional scale, clockwise rotation, and deterministic
+  layers are one cross-stack contract.
+- Pointer movement must remain local and frame-batched; do not send an API
+  mutation for each drag event. Preserve semantic command controls and the
+  ordered garment list as alternatives to direct Canvas interaction.
+- Preserve the approved three-column Saved Outfits grid at `1280 × 800`.
+  Search, filters, favorites, exact duplicate-outfit detection, and fullscreen
+  or long-press preview are not reasons to expand the current screen.
 - Revoke every local image-preview object URL and keep multipart upload progress,
   cancellation, and structured errors in the centralized clothing client.
 - Do not introduce a dark theme during the MVP.

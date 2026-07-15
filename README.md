@@ -5,11 +5,11 @@ touchscreen. It lets users organize clothing, compose garments on a silhouette,
 control layers, and save outfits without requiring a cloud account, subscription,
 or Internet connection.
 
-The current implementation includes a complete local garment vertical slice:
-streaming image import, exact-original preservation, safe local derivatives,
-SQLite persistence, Wardrobe category browsing, Clothing Details editing, and
-soft deletion. Outfit Builder, Saved Outfits UI, phone QR import, and kiosk
-deployment remain later milestones.
+The current implementation includes the local garment and outfit vertical
+slices: streaming image import, exact-original preservation, safe local
+derivatives, SQLite persistence, Wardrobe and Clothing Details, the manual
+Outfit Builder, deterministic local preview generation, and the approved Saved
+Outfits grid. Phone QR import and kiosk deployment remain later milestones.
 
 ## MVP principles
 
@@ -137,6 +137,7 @@ local-data/
     garments/cutouts/
     outfits/previews/
   tmp/uploads/
+  tmp/previews/
   backups/
 ```
 
@@ -219,6 +220,60 @@ The Clothing collection accepts an optional `garment_category` query parameter
 for the approved Wardrobe category navigation. Search, arbitrary filters, and
 favorites are intentionally absent.
 
+## Outfit Builder and Saved Outfits
+
+Open `/outfit-builder` to create an outfit, or pass an existing identifier as
+`/outfit-builder?outfitId={id}`. The editor can add and remove garments, place
+them directly on the workspace, move/resize/rotate them with touch-friendly
+commands, reorder layers, reset transforms, and keep several distinct garments
+in one body zone. Adding the same garment again activates its existing
+placement rather than creating an accidental duplicate.
+
+The browser and backend share one placement contract:
+
+- a logical `640 × 800` workspace;
+- normalized garment-center `x` and `y` coordinates with a top-left origin;
+- one proportional scale value;
+- clockwise rotation around the garment center; and
+- deterministic back-to-front layer ordering.
+
+The editor draft lives in one reducer-backed session separate from TanStack
+Query server state. A versioned, validated, size-bounded `sessionStorage` record
+recovers the draft after a browser reload. API save failures preserve the local
+draft. Existing outfits support update, save as new, restore saved state, and
+confirmed soft deletion.
+
+Create and placement-changing update requests render a deterministic local
+`600 × 750` lossless WebP. Pillow tries cutout, normalized, then original
+garment media and substitutes a neutral placeholder only when every candidate
+is unusable. A private staging directory and durable manifest coordinate atomic
+promotion with the SQLite transaction. Name-only or unchanged-placement updates
+reuse the existing preview; failed work preserves the previous row and preview.
+Successful replacement removes the superseded unregistered preview, with
+startup reconciliation retrying deferred cleanup. Soft-deleted outfit previews
+are retained until Muse has an explicit permanent-retention policy.
+
+`/saved-outfits` displays the approved three-column grid at `1280 × 800`,
+newest-updated first. Cards use the generated preview, fall back safely when it
+is missing, and reopen the exact outfit in the Builder. Grid scroll position is
+preserved within the browser session. Long-press/fullscreen preview and exact
+duplicate-outfit detection are optional extensions, not current MVP behavior.
+
+Local saved-outfit endpoints are:
+
+- `POST /api/v1/outfits`
+- `GET /api/v1/outfits`
+- `GET /api/v1/outfits/{id}`
+- `PATCH /api/v1/outfits/{id}`
+- `DELETE /api/v1/outfits/{id}`
+
+An Apple M4 development benchmark rendered 20 placements of one synthetic
+`800 × 1200` WebP with a `0.2334 s` median and `0.2383 s` maximum across five
+warmed runs; the output was 40,034 bytes. This is non-Pi regression evidence.
+Raspberry Pi 5 latency, memory, thermal, touch, storage, and interruption checks
+remain required by
+[docs/raspberry-pi-validation.md](docs/raspberry-pi-validation.md).
+
 ## Verification
 
 Run the backend checks:
@@ -252,18 +307,22 @@ npm run test:e2e
 Apply frontend formatting with `npm run format`. The Playwright shell suite uses
 Chromium at the target `1280 × 800` viewport.
 
-The complete import-to-delete browser flow targets a running same-origin
-FastAPI production host. After building the frontend, migrating a disposable
-empty data root, and starting FastAPI as described below, run it in a second
-terminal with:
+The production browser integration suite targets a running same-origin FastAPI
+host. After building the frontend, migrating a disposable empty data root, and
+starting FastAPI as described below, run it in a second terminal with:
 
 ```bash
 cd frontend
 PLAYWRIGHT_BASE_URL=http://127.0.0.1:8000 npm run test:e2e:production
 ```
 
-This check performs a real multipart image import, metadata update, reload,
-media read, and soft deletion. Do not point it at a personal wardrobe database.
+This runs the garment import/edit/delete flow and the P5 outfit flow. The latter
+imports local garments, creates overlapping placements, transforms and layers
+them, verifies the generated `600 × 750` preview and approved three-column
+grid, reloads, updates, saves as new, deletes, and checks local-only requests and
+`1280 × 800` horizontal overflow. To run only that check, use
+`npm run test:e2e:production:p5` with the same `PLAYWRIGHT_BASE_URL`. Do not
+point either command at a personal wardrobe database.
 
 ## Production build and startup
 

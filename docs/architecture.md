@@ -18,7 +18,9 @@ Chromium kiosk
 Local data root
   ├─ muse.sqlite3
   ├─ media/garments/{original,processed,thumbnails,cutouts}/
+  ├─ media/outfits/previews/
   ├─ tmp/uploads/<import-attempt>/
+  ├─ tmp/previews/<preview-attempt>/
   └─ backups/
 ```
 
@@ -41,6 +43,25 @@ invalidation. Wardrobe selection and view context remain in validated URL
 parameters so Details and browser navigation can restore the exact context.
 Multipart upload progress uses the browser's local `XMLHttpRequest` progress
 events; normal JSON requests continue through the centralized fetch client.
+
+The Outfit Builder uses one reducer-backed editor session above the route tree.
+The draft contains the outfit mode and identifier, name, placements, active
+garment, origin return path, and last saved baseline. It is distinct from
+TanStack Query's server cache and is encoded into a versioned, validated,
+512 KiB-bounded `sessionStorage` record for reload recovery. Corrupt or
+unsupported records are discarded safely. Temporary Wardrobe selection may
+reuse the draft without saving it to the API. A validated local
+`preserveDraft=1` Wardrobe round-trip marker distinguishes that explicit editor
+handoff from an ordinary Home-to-Wardrobe-to-Builder flow, which starts a new
+outfit when the retained editor state is clean.
+
+The browser workspace renders through a local Canvas 2D surface with a logical
+`640 × 800` coordinate system. Pointer movement is accumulated with
+`requestAnimationFrame`; it does not issue API requests. Semantic command
+controls and an ordered garment list remain available as keyboard and assistive
+technology alternatives. Saved Outfits uses the approved three-column card
+grid at `1280 × 800`, with two- and one-column fallbacks only on narrower
+development viewports.
 
 Required fonts and interface assets are part of the Vite bundle. Approved PNG
 mockups are design references, not runtime assets. The frontend cannot assume
@@ -93,6 +114,18 @@ after the exact original, a normalized display derivative, a thumbnail, and the
 corresponding database rows are durable. Optional background cleanup continues
 through the bounded local worker and is observable through clothing responses.
 
+The saved-outfit contract is:
+
+- `POST /api/v1/outfits` creates an outfit, its ordered placements, and its
+  generated preview;
+- `GET /api/v1/outfits` returns active summaries newest-updated first;
+- `GET /api/v1/outfits/{id}` hydrates the complete editor state, including
+  active or deleted garment-reference status;
+- `PATCH /api/v1/outfits/{id}` updates the name and, when supplied, replaces the
+  placements transactionally; and
+- `DELETE /api/v1/outfits/{id}` soft-deletes the outfit without deleting any
+  garment or registered preview bytes.
+
 ## Persistence model
 
 SQLite stores metadata and relative file references. Image bytes and generated
@@ -124,7 +157,19 @@ Outfit item coordinates are normalized for display-size independence. `x` and
 `y` describe the garment center, use the canvas top-left as origin, and each
 remain in the inclusive range `[0, 1]`. Each placement stores one proportional
 scale value, rotation, and an explicit layer. Rendering sorts by layer
-deterministically.
+deterministically from lowest/back to highest/front, with clothing identifier as
+the stable tie-breaker. Positive stored rotation is clockwise around the garment
+center.
+
+Both the browser editor and local Pillow renderer interpret placements against
+the same logical `640 × 800` workspace. A garment's unrotated width is
+`640 × body-zone base width × scale`; height preserves the chosen image's
+aspect ratio. The base-width fractions are `0.28` head, `0.34` neck, `0.50`
+upper body, `0.56` full body, `0.42` lower body, `0.40` feet, and `0.30`
+accessory. Coordinates, proportional scale, rotation, and unique layer are
+validated at the API and recovered-session boundaries. Several different
+garments may overlap in the same body zone; adding the same garment again
+activates its existing placement instead of duplicating it.
 
 ### Deletion policy
 
@@ -180,6 +225,24 @@ Startup reconciliation removes stale temporary attempts, preserves media for
 committed rows, compensates interrupted uncommitted promotions, and resets stale
 processing claims. It never broadly purges originals or soft-deleted media.
 
+Outfit preview generation follows the same filesystem/database ownership model.
+Creating an outfit or changing its placements renders a `600 × 750` lossless
+WebP in a private preview-attempt directory, records a recovery manifest, and
+atomically promotes a unique immutable filename before the short database
+transaction records it. Rendering is local and bounded. It tries cutout,
+normalized, then original garment media; an unavailable or invalid garment
+becomes a neutral placeholder rather than failing the whole preview. A failed
+render, promotion, or database update preserves the previous outfit row and
+preview. Name-only and unchanged-placement updates reuse the current preview.
+
+After a successful placement replacement, the coordinator removes the
+superseded unregistered file. If cleanup fails, startup reconciliation retries
+it from the manifest. Reconciliation treats active and soft-deleted outfit rows
+as preview owners, preserves every registered preview, removes only known
+unregistered generated files, and reports missing registered files. Soft-deleting
+an outfit deliberately retains its preview until an explicit permanent-retention
+policy exists.
+
 SQLite is the durable queue for optional processing. One application-owned
 worker claims pending rows, performs CPU work outside database transactions,
 and commits a cutout or a truthful fallback state. Concurrency and queued wake
@@ -218,12 +281,20 @@ contention. Images are kept out of SQLite to limit database growth and memory
 pressure. Outfit collection queries aggregate placement counts in SQLite and
 reserve full garment/image hydration for detail reads.
 
+On an Apple M4 development machine, a warmed 20-placement synthetic preview
+render measured a `0.2334 s` median and `0.2383 s` maximum across five runs and
+produced a 40,034-byte WebP. This is regression evidence only, not Raspberry Pi
+validation. Target-device render latency, Chromium interaction smoothness,
+memory, temperature, throttling, storage behavior, and power-loss recovery
+remain acceptance work in `docs/raspberry-pi-validation.md`.
+
 ## Deferred capabilities
 
 The current vertical slice does not implement QR phone import, ML-backed
-background removal, automatic metadata detection, duplicate-outfit detection,
-search, arbitrary filters, favorites, cloud synchronization, recommendations,
-or multi-user accounts. Phone QR import remains an intended later MVP milestone;
-the other discovery and automation features remain optional or post-MVP. Later
-features must preserve the local API, migration, storage, and offline guarantees
-described here.
+background removal, automatic metadata detection, exact duplicate-outfit
+detection, search, arbitrary filters, favorites, cloud synchronization,
+recommendations, or multi-user accounts. Phone QR import remains an intended
+later MVP milestone; a fullscreen or long-press Saved Outfit preview is an
+optional convenience. The other discovery and automation features remain
+optional or post-MVP. Later features must preserve the local API, migration,
+storage, and offline guarantees described here.

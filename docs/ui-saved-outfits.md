@@ -46,7 +46,9 @@ Opening Home must not modify or delete any saved outfit.
 
 ## Main Layout
 
-Saved outfits are displayed as large visual cards in a vertical list.
+Saved outfits are displayed in the approved three-column grid at the primary
+`1280 × 800` kiosk viewport. This grid, not a single-column list, is the visual
+source-of-truth layout.
 
 Each card contains:
 
@@ -66,7 +68,8 @@ Recommended default order:
 Newest first
 ```
 
-The list may scroll vertically when necessary.
+Additional rows scroll vertically inside the Saved Outfits content region. The
+page itself must not gain horizontal overflow.
 
 ---
 
@@ -108,6 +111,10 @@ It must not regenerate a different visual result each time the page opens.
 
 Preview images are created locally when the outfit is saved.
 
+The preview is a fixed `600 × 750` lossless WebP rendered from the same
+logical `640 × 800` placement contract as Outfit Builder. It is stored under a
+unique immutable local path and is not regenerated when the grid opens.
+
 ---
 
 ## Outfit Identification
@@ -116,20 +123,23 @@ Every outfit has:
 
 - Stable internal identifier
 - Creation timestamp
-- Optional user-defined name
+- Update timestamp
+- User-confirmed display name
 - Display order
 
-If the user does not provide a custom name, Muse may assign a default name.
+If the user keeps the suggested name, Muse assigns the next local look number.
 
 Examples:
 
 ```text
-Outfit 01
-Outfit 02
-Outfit 03
+Look 01
+Look 02
+Look 03
 ```
 
-The number is based on creation order.
+The suggested number is a naming convenience based on the current active outfit
+count. The stable identifier and newest-updated ordering are not derived from
+the display name.
 
 A custom name may replace or accompany the number.
 
@@ -142,7 +152,8 @@ Summer Outfit
 Black and Beige
 ```
 
-The approved mockup uses visual numbering to show the outfit sequence.
+The approved mockup's visual numbering establishes the card rhythm; the saved
+name is the accessible and visible identifier used by the implementation.
 
 ---
 
@@ -198,7 +209,9 @@ Outfit Builder
 
 ## Long-Press Preview
 
-A long press may open a larger visual preview.
+A long press or fullscreen image may be added as an optional later convenience.
+It is not implemented in the current MVP and is not required to open, edit, or
+delete an outfit.
 
 The enlarged preview contains:
 
@@ -208,7 +221,7 @@ The enlarged preview contains:
 - Close action
 - Open in Outfit Builder action
 
-Long press is an optional convenience.
+If implemented later, long press remains an optional convenience.
 
 It must not be the only way to access important functionality.
 
@@ -218,7 +231,8 @@ A visible alternative may be added later if testing shows that long press is unc
 
 ## Fullscreen Preview
 
-When an outfit preview is opened fullscreen:
+Fullscreen preview is not part of the current interaction contract. If it is
+implemented later:
 
 - The outfit fills most of the display
 - The Muse silhouette remains visible
@@ -227,7 +241,7 @@ When an outfit preview is opened fullscreen:
 - A visible close or reduce control is provided
 - An `Open in Outfit Builder` button may be displayed
 
-Closing the preview returns to the same list position.
+Closing the preview would return to the same grid position.
 
 ---
 
@@ -366,7 +380,7 @@ If one preview image is missing:
 - Keep the outfit card available
 - Display a neutral preview placeholder
 - Allow the outfit to open in Outfit Builder
-- Regenerate the preview when possible
+- Keep the saved outfit data unchanged
 
 ---
 
@@ -375,12 +389,11 @@ If one preview image is missing:
 Muse must preserve:
 
 - Current vertical scroll position
-- Selected outfit
-- Open fullscreen preview
 - Origin screen
-- Current list order
+- Current grid order
 
-When returning from Outfit Builder without deleting the outfit, the user should return to approximately the same location in the list.
+When returning from Outfit Builder without deleting the outfit, the user should
+return to approximately the same location in the grid.
 
 ---
 
@@ -395,8 +408,7 @@ Offline functionality includes:
 - Opening Outfit Builder
 - Updating outfits
 - Deleting outfits
-- Regenerating previews
-- Preserving list order
+- Preserving grid order
 
 No cloud service is required for the MVP.
 
@@ -409,8 +421,6 @@ The screen must support:
 - Large outfit cards
 - Comfortable vertical scrolling
 - Clear pressed feedback
-- Optional long press
-- Large fullscreen controls
 - No hover-dependent actions
 
 The user must be able to open an outfit without precise pointer placement.
@@ -454,11 +464,9 @@ Suggested accessible labels:
 
 ```text
 Return to Home
-Open Outfit 01
-Open Outfit 02
-Preview Outfit 01
+Open Look 01 in Outfit Builder
+Open Look 02 in Outfit Builder
 Open outfit in Outfit Builder
-Close outfit preview
 ```
 
 If custom outfit names exist, accessible labels should use those names.
@@ -481,15 +489,15 @@ Primary target:
 
 At the target resolution:
 
-- At least two large outfit cards should remain comfortably visible
-- Cards should use most of the available width
+- Exactly three approved outfit-card columns are visible
+- Cards divide the available grid width evenly
 - Outfit previews should remain clear
 - Vertical scrolling should feel smooth
 - No horizontal page scrolling should occur
 
 On smaller development screens:
 
-- Cards may reduce proportionally
+- The grid may reduce to two and then one column
 - Vertical scrolling remains available
 - Touch targets must remain large
 
@@ -503,31 +511,32 @@ The Saved Outfits screen must remain smooth with a reasonable collection of loca
 
 Recommended behavior:
 
-- Load optimized preview images
-- Lazy-load previews below the visible area
+- Fetch a bounded first page of outfit summaries
+- Load the first visible cards eagerly and lazy-load later preview images
 - Preserve original outfit data separately
 - Avoid re-rendering every outfit while scrolling
 - Avoid regenerating previews every time the page opens
 
-A missing preview may be regenerated in the background without blocking the complete page.
+A missing or unreadable preview uses the neutral local fallback and never blocks
+the complete grid. Startup reconciliation reports registered files that are
+missing, but it does not silently invent a replacement outfit configuration.
+
+Real Raspberry Pi scroll, decode, memory, and thermal behavior remains to be
+measured. Development and CI observations are not target-hardware claims.
 
 ---
 
 ## Implementation Guidance
 
-Suggested component structure:
+Implemented screen structure:
 
 ```text
 SavedOutfitsPage
 ├── PageHeader
-│   ├── HomeButton
-│   └── PageTitle
-├── SavedOutfitList
+├── three-column SavedOutfitGrid
 │   └── SavedOutfitCard
 │       ├── OutfitPreview
-│       ├── OutfitIdentifier
-│       └── PressInteraction
-├── OutfitFullscreenPreview
+│       └── OutfitIdentifier and tap target
 ├── EmptySavedOutfitsState
 ├── ErrorState
 └── BackgroundMonogram
@@ -544,7 +553,7 @@ Opening an outfit:
 ```text
 /saved-outfits
     ↓
-/outfit-builder?outfitId={id}
+/outfit-builder?outfitId={id}&returnTo=%2Fsaved-outfits
 ```
 
 The exact navigation implementation may vary, but all saved outfit data must be restored correctly.
@@ -561,9 +570,9 @@ name
 created_at
 updated_at
 preview_image_path
-garment_items
-transformations
-layer_order
+preview_width
+preview_height
+item_count
 ```
 
 Each garment item within the outfit should contain:
@@ -576,6 +585,8 @@ position_y
 scale
 rotation
 layer_index
+clothing_item_status
+clothing_item
 ```
 
 The Saved Outfits screen reads preview and summary data.
@@ -586,18 +597,21 @@ Outfit Builder loads the complete configuration.
 
 ## Definition of Done
 
-The Saved Outfits screen is complete when:
+The P5 Saved Outfits implementation is complete when:
 
-- The layout matches the approved mockup.
+- The approved three-column layout is used at `1280 × 800`.
 - Saved outfits appear newest first.
 - Every card shows the correct outfit preview.
 - A tap opens the correct outfit in Outfit Builder.
 - All garments and transformations are restored.
-- Long-press or fullscreen preview works if included.
-- Returning from Outfit Builder preserves the list position.
+- Returning from Outfit Builder preserves the grid position.
 - Updating an outfit refreshes its preview.
 - Deleting an outfit does not delete clothing items.
 - The empty state links to Outfit Builder.
 - Missing preview images are handled safely.
 - The complete screen works without Internet access.
-- Scrolling remains smooth on Raspberry Pi.
+
+These development requirements are implemented. Raspberry Pi scroll smoothness,
+image-decode cost, memory, and thermal behavior remain release-validation
+requirements. Long-press/fullscreen preview is optional and is not a completion
+gate.

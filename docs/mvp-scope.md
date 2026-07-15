@@ -19,10 +19,13 @@ Muse should feel like a real consumer product rather than a technical prototype.
 ## Outfit Builder
 
 - Muse silhouette
-- Manual clothing placement
-- Layer ordering
-- Outfit preview
-- Save outfit
+- Add, remove, and cycle local wardrobe garments
+- Direct and command-based manual placement
+- One proportional scale value and rotation per placement
+- Deterministic layer ordering, including overlapping garments
+- Local generated outfit preview
+- Create, reopen, update, save as new, and soft-delete outfits
+- Recover the current editor draft during the browser session
 
 ## Import
 
@@ -40,7 +43,8 @@ the Wardrobe's only collection refinement.
 
 - SQLite database
 - Local image storage
-- Saved outfits
+- Saved outfits in the approved three-column grid
+- Immutable local `600 × 750` preview WebP files
 
 ## Device
 
@@ -79,3 +83,9 @@ The MVP is considered successful if a user can:
 5. Save the outfit.
 6. Relaunch Muse and recover all saved data.
 7. Experience the application through a polished touchscreen interface.
+
+Exact duplicate-outfit detection, automatic metadata detection, and a
+fullscreen or long-press Saved Outfit preview are optional extensions, not MVP
+completion gates. Local-device import precedes phone QR import. Background
+removal remains best-effort and local, with the original image as the mandatory
+fallback.

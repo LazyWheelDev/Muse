@@ -14,13 +14,13 @@ A task must not begin before its required dependencies are complete.
 
 ## P1.1 Frontend Setup
 
-- [ ] Create the React, TypeScript, and Vite application
-- [ ] Configure strict TypeScript
-- [ ] Add linting and formatting
-- [ ] Create the base folder structure
-- [ ] Add environment configuration
-- [ ] Add a basic application shell
-- [ ] Confirm the frontend runs locally
+- [x] Create the React, TypeScript, and Vite application
+- [x] Configure strict TypeScript
+- [x] Add linting and formatting
+- [x] Create the base folder structure
+- [x] Add environment configuration
+- [x] Add a basic application shell
+- [x] Confirm the frontend runs locally
 
 ### Definition of Done
 
@@ -33,13 +33,13 @@ A task must not begin before its required dependencies are complete.
 
 ## P1.2 Backend Setup
 
-- [ ] Create the FastAPI application
-- [ ] Add configuration management
-- [ ] Add a health-check endpoint
-- [ ] Create the backend folder structure
-- [ ] Add dependency management
-- [ ] Configure local development startup
-- [ ] Add an initial backend test
+- [x] Create the FastAPI application
+- [x] Add configuration management
+- [x] Add a health-check endpoint
+- [x] Create the backend folder structure
+- [x] Add dependency management
+- [x] Configure local development startup
+- [x] Add an initial backend test
 
 ### Definition of Done
 
@@ -51,10 +51,10 @@ A task must not begin before its required dependencies are complete.
 
 ## P1.3 Frontend and Backend Connection
 
-- [ ] Configure the frontend API base URL
-- [ ] Fetch the backend health status
-- [ ] Display a clear connection error when unavailable
-- [ ] Confirm cross-origin configuration works locally
+- [x] Configure the frontend API base URL
+- [x] Fetch the backend health status
+- [x] Display a clear connection error when unavailable
+- [x] Confirm cross-origin configuration works locally
 
 ### Definition of Done
 
@@ -67,15 +67,15 @@ A task must not begin before its required dependencies are complete.
 
 ## P2.1 Database Setup
 
-- [ ] Configure SQLite
-- [ ] Create database initialization
-- [ ] Enable foreign-key constraints
-- [ ] Add a migration strategy
-- [ ] Separate development data from production data
+- [x] Configure SQLite
+- [x] Create database initialization
+- [x] Enable foreign-key constraints
+- [x] Add a migration strategy
+- [x] Separate development data from production data
 
 ### Definition of Done
 
-- The database is created automatically
+- The database is created by the explicit migration command
 - The schema can be reproduced from a clean installation
 
 ---
@@ -108,13 +108,13 @@ A task must not begin before its required dependencies are complete.
 
 ## P2.3 Outfit Data Model
 
-- [ ] Create the outfit model
-- [ ] Create the outfit item relationship
-- [ ] Store garment position
-- [ ] Store garment scale
-- [ ] Store garment rotation
-- [ ] Store garment layer order
-- [ ] Add timestamps
+- [x] Create the outfit model
+- [x] Create the outfit item relationship
+- [x] Store garment position
+- [x] Store garment scale
+- [x] Store garment rotation
+- [x] Store garment layer order
+- [x] Add timestamps
 
 ### Definition of Done
 
@@ -223,54 +223,60 @@ If QR upload is not ready for the first stable build, local browser upload remai
 
 ## P5.1 Muse Silhouette
 
-- [ ] Create the default Muse silhouette
-- [ ] Center it in the outfit workspace
-- [ ] Ensure it scales correctly
-- [ ] Support the target landscape resolution
-- [ ] Keep the visual style minimal and premium
+- [x] Create the default Muse silhouette
+- [x] Center it in the outfit workspace
+- [x] Ensure it scales correctly
+- [x] Support the target landscape resolution
+- [x] Keep the visual style minimal and premium
 
 ---
 
 ## P5.2 Garment Selection
 
-- [ ] Open the wardrobe from the outfit builder
-- [ ] Select a clothing item
-- [ ] Add it to the silhouette
-- [ ] Remove it from the current outfit
-- [ ] Prevent accidental duplicate additions
+- [x] Open the wardrobe from the outfit builder
+- [x] Select a clothing item
+- [x] Add it to the silhouette
+- [x] Remove it from the current outfit
+- [x] Prevent accidental duplicate additions by activating an existing placement
 
 ---
 
 ## P5.3 Garment Transformation
 
-- [ ] Move garments
-- [ ] Resize garments
-- [ ] Rotate garments
-- [ ] Support one proportional scale adjustment
-- [ ] Reset garment transformation
-- [ ] Use touch-friendly controls
+- [x] Move garments
+- [x] Resize garments
+- [x] Rotate garments
+- [x] Support one proportional scale adjustment
+- [x] Reset garment transformation
+- [x] Use touch-friendly controls
 
 ---
 
 ## P5.4 Layer Management
 
-- [ ] Move a garment forward
-- [ ] Move a garment backward
-- [ ] Display the current layer order
-- [ ] Preserve layer order while editing
-- [ ] Prevent invalid layer states
+- [x] Move a garment forward
+- [x] Move a garment backward
+- [x] Display the current layer order
+- [x] Preserve layer order while editing
+- [x] Prevent invalid layer states
 
 ---
 
 ## P5.5 Outfit Saving
 
-- [ ] Name an outfit
-- [ ] Save all selected garments
-- [ ] Save all garment transformations
-- [ ] Reload a saved outfit
-- [ ] Update an existing outfit
-- [ ] Delete an outfit
-- [ ] Generate an outfit preview
+- [x] Name an outfit
+- [x] Save all selected garments
+- [x] Save all garment transformations
+- [x] Reload a saved outfit
+- [x] Update an existing outfit or save the edit as a new outfit
+- [x] Delete an outfit with confirmation
+- [x] Generate and reconcile an immutable local outfit preview
+- [x] Preserve and validate the in-progress editor session draft
+
+P5 is development-complete. Raspberry Pi 5 latency, touch, temperature,
+throttling, storage, and interruption validation remains required before a
+hardware release claim. Exact duplicate-outfit detection is an optional
+extension and is not part of P5 completion.
 
 ---
 

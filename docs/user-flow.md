@@ -127,7 +127,7 @@ Outfit Builder
     ↓
 Muse Silhouette
     ↓
-Select Garment
+Select or Cycle Garment
     ↓
 Place Garment
 ```
@@ -140,16 +140,28 @@ The user can then:
 - Change layer order
 - Remove garments
 - Add more garments
+- Keep several different garments in the same body zone
 
 When finished:
 
 ```text
 Save Outfit
     ↓
-Enter Outfit Name
+Enter or Confirm Outfit Name
     ↓
-Confirm
+Generate Local Preview
+    ↓
+Saved
 ```
+
+The current draft is held in one editor session and recovered from validated,
+versioned session storage after a reload. Opening the Wardrobe to select a
+garment preserves the draft through an explicit local round-trip marker,
+including category changes, Clothing Details, and Add Garment. Opening Wardrobe
+from Home has no such marker and begins a new outfit when the previous editor
+state is clean. Failed saves keep every local edit available for a retry. When
+an existing outfit is opened, the user may update it, save the edit as a new
+outfit, restore the saved version, or delete it with confirmation.
 
 ---
 
@@ -160,17 +172,22 @@ Home
     ↓
 Saved Outfits
     ↓
-Select Outfit
+Select Card from Three-Column Grid
     ↓
-Preview
+Outfit Builder
 ```
 
 Available actions:
 
-- Open Outfit
-- Rename Outfit
-- Delete Outfit
-- Return
+- Tap a card to reopen the exact saved outfit in Outfit Builder
+- Update the existing outfit
+- Save the edit as a new outfit
+- Delete the outfit with confirmation
+- Return to approximately the same grid position
+
+The grid uses the saved local `600 × 750` WebP preview and a neutral fallback
+if that file cannot be displayed. A fullscreen or long-press preview is an
+optional later convenience and is not required to reopen or manage an outfit.
 
 ---
 
