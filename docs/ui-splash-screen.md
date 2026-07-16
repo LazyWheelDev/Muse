@@ -175,7 +175,8 @@ When reduced motion is enabled:
 
 1. Display the final Muse wordmark immediately.
 2. Fade in the tagline.
-3. Transition directly to Home.
+3. Wait in that calm final composition if application readiness is still pending.
+4. Transition to Home when Muse is ready.
 
 No essential functionality may depend on the full animation.
 
@@ -201,6 +202,25 @@ If startup fails:
 - Replace the final composition with a clear recovery message.
 - Provide a retry action.
 - Do not expose the operating system or browser interface.
+
+Temporary readiness failures use bounded polling and retain the branded final
+composition. A persistent failure presents only a safe summary of the database,
+storage, migration, or interface-build category; backend exception text and
+local paths are never rendered. Restart appears only when the device capability
+contract reports it available.
+
+## Replay Policy
+
+- A cold application start plays the complete sequence once.
+- A soft reload uses the shortened final-composition sequence.
+- Internal navigation, including returning Home, never replays the full Splash.
+- Deep-link reloads return to their requested route after the readiness layer.
+- Automated tests use deterministic state markers rather than changing the
+  production visual sequence.
+
+The full sequence targets approximately `2.7–4.1` seconds when readiness is
+already successful. When readiness takes longer, the final wordmark is held; the
+complete animation does not loop.
 
 ---
 

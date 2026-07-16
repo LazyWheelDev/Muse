@@ -134,9 +134,9 @@ npm run test:e2e
 Apply frontend formatting with `npm run format`; use `npm run test:watch` while
 iterating. Playwright exercises Chromium at `1280 × 800`.
 
-To run the destructive full-stack browser smoke check, first build the frontend
-and start FastAPI against a newly migrated disposable data root. Then run, from
-another terminal:
+For the ordinary and P4 destructive browser checks, first build the frontend
+and prepare the documented disposable FastAPI processes. P6 owns both listeners
+itself; leave ports `8000` and `8787` free before running its command.
 
 ```bash
 cd frontend
@@ -148,6 +148,16 @@ MUSE_MAIN_PID_FILE=/tmp/muse-phone-main.pid \
 MUSE_PHONE_PID_FILE=/tmp/muse-phone-upload.pid \
 MUSE_PHONE_E2E_DATA_ROOT=/tmp/muse-phone-e2e \
 npm run test:e2e:production:p4
+
+MUSE_P6_RUNTIME_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/muse-p6-runtime.XXXXXX")"
+MUSE_P6_DATA_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/muse-p6-data.XXXXXX")"
+chmod 700 "$MUSE_P6_RUNTIME_ROOT" "$MUSE_P6_DATA_ROOT"
+PLAYWRIGHT_BASE_URL=http://127.0.0.1:8000 \
+PLAYWRIGHT_PHONE_UPLOAD_BASE_URL=http://127.0.0.1:8787 \
+MUSE_BACKEND_EXECUTABLE=/absolute/path/to/backend/.venv/bin/muse-backend \
+MUSE_P6_E2E_RUNTIME_ROOT="$MUSE_P6_RUNTIME_ROOT" \
+MUSE_P6_E2E_DATA_ROOT="$MUSE_P6_DATA_ROOT" \
+npm run test:e2e:production:p6
 ```
 
 The suite imports, edits, reloads, and soft-deletes its own garments, then
@@ -156,15 +166,26 @@ cross-stack check with `npm run test:e2e:production:p5` under the same disposabl
 host configuration. The P4 command additionally requires the restricted
 listener configured against `dist-phone`; it decodes the QR in a phone-sized
 browser, tests the single-use network upload, and restarts both disposable
-processes before checking persistence and replay. CI provides the executable
-PID-file paths, and a dedicated empty data root; this harness uses local process
-control and must never be replaced by a privileged Muse API. Never target an
-existing personal or production wardrobe.
+processes before checking persistence and replay. P6 requires a fresh private
+runtime root and a dedicated empty data root. It controls only the exact child
+process handles it launches, uses no shared predictable PID path, and must never
+be replaced by a privileged Muse API. Never target an existing personal or
+production wardrobe.
 
 For a local run, create owner-only PID files containing the actual disposable
 listener PIDs before invoking P4; the harness rewrites them after restart. The
 GitHub Actions workflow is the reference setup for all required variables,
 isolated migration, listener startup, cleanup, and failure diagnostics.
+
+The P6 harness owns private data/runtime attempt directories and retains the
+exact child-process handles it launches. Its PID files are generated only for
+bounded CI crash cleanup, not supplied as process authority. It starts both
+disposable listeners, stages restore and delete-all, proves online activation is
+rejected, invokes `apply-staged-maintenance` only after both have stopped,
+restarts them, and verifies readiness, persistence, reset behavior, and LAN
+isolation. It refuses non-loopback targets. Never run it against personal data.
+Service activation remains an operator/test action; Muse exposes no restart
+shell API.
 
 Run both suites for cross-stack changes. GitHub Actions performs locked installs,
 all static checks and tests, a clean-database migration check, both frontend
@@ -225,6 +246,25 @@ and the restricted-listener phone workflow.
   staging, cleanup, or reconciliation require injected-failure and restart
   coverage.
 - Do not call SQLAlchemy `metadata.create_all()` as a runtime migration shortcut.
+- Keep application settings behind the explicit typed allowlist. Never accept
+  an arbitrary settings key, command string, environment variable, Wi-Fi
+  credential, or filesystem path from the browser.
+- Keep every Settings mutation JSON-only and protected by the same-origin
+  middleware. UI confirmation is not a substitute for backend validation.
+- Create backups from the SQLite online-backup API and copy only snapshot-owned
+  regular media. Stream checksums and validation; do not buffer an archive entry
+  or complete backup in memory.
+- Treat every backup as hostile during restore. Never call `extractall()`.
+  Require a closed manifest, reject traversal, symlinks, special files,
+  duplicate or case-colliding paths and zip bombs, and verify checksums, SQLite,
+  foreign keys, and migration head before staging.
+- A staged restore or delete-all response means restart is required. It must not
+  be described as applied. Run `apply-staged-maintenance` only after both Muse
+  listeners are stopped; the runtime lease refuses online activation.
+- Platform adapters are read-only and bounded during P6. Restart, reboot,
+  shutdown, Wi-Fi management, hardware brightness, systemd, and kiosk activation
+  remain unavailable until P7. Do not add `shell=True`, caller-selected argv,
+  broad sudo rules, or a root web process.
 
 ### Schema changes
 
@@ -306,6 +346,12 @@ and production environments and deliberately leaves media in place.
   accept only JPEG, PNG, and WebP. Reject HEIC/HEIF with an actionable message;
   do not rename it or claim unsupported browser conversion.
 - Do not introduce a dark theme during the MVP.
+- Keep the Splash readiness-aware and single-play. Internal navigation must not
+  replay it, persistent readiness failure must retain a safe Retry path, and
+  Reduced Motion must preserve every essential state transition.
+- Interface brightness is an application dimming overlay with a safe minimum;
+  never label it as hardware backlight control. Screen sleep must preserve the
+  active route and consume the wake interaction without click-through.
 
 ## Scope discipline
 

@@ -1,5 +1,142 @@
 # Codex build log
 
+## 2026-07-16 — P6.1–P6.4 final product experience
+
+### Scope completed
+
+- Replaced the placeholder Home and Settings shells with the approved four-card
+  Home and five-card Settings compositions while preserving Wardrobe, Details,
+  Add Garment, Outfit Builder, and Saved Outfits context.
+- Added W & N, Display, Data, Device, and About Muse routes plus the separate
+  capability-aware Power dialog and application-level display-sleep overlay.
+- Added the readiness-aware Muse Splash using local HTML, CSS, SVG, fonts, and
+  motion only. It supports full, shortened, Reduced Motion, waiting, black
+  transition, persistent recovery, Retry, deep-link, and single-play behavior.
+- Added typed persisted preferences for the friendly device name, interface
+  dimming, screen timeout, Reduced Motion, and Splash mode. Interface dimming is
+  explicitly not hardware backlight control.
+- Added sanitized local network, storage, device, capability, and maintenance
+  status. Privileged Wi-Fi, restart, reboot, shutdown, kiosk, systemd, hardware
+  brightness, and touch-calibration actions remain unavailable until the P7
+  deployment adapters and physical Raspberry Pi validation exist.
+- Added consistent loading, empty, offline, success, safe failure, destructive,
+  and restart-required states without adding cloud services, remote assets,
+  accounts, search, favorites, AI features, or a dark theme.
+
+### Backup, restore, and deletion safety
+
+- Local backup creation uses SQLite's online-backup API, snapshot-owned regular
+  media, a closed versioned manifest, SHA-256 checksums, bounded streaming, and
+  atomic archive promotion. Phone-upload sessions, logs, caches, temporary data,
+  environment files, nested backups, and secrets are excluded.
+- Restore treats every archive as hostile. It rejects traversal, links and
+  special files, duplicate or case-colliding paths, unsupported or encrypted
+  entries, excessive entry count, archive or expanded size, compression bombs,
+  checksum failures, invalid SQLite, foreign-key errors, and incompatible
+  migration heads. Archive entries are validated and staged without unbounded
+  buffering or `extractall()`.
+- Restore and delete-all are activation-safe across the two-listener runtime.
+  The running main and restricted listeners hold shared POSIX leases; the
+  explicit offline CLI requires an exclusive lease and refuses to modify live
+  data while either process is active. Durable activation journals, rollback
+  staging, directory synchronization, startup reconciliation, and bounded
+  cleanup cover interrupted activation without deleting a committed garment.
+- Delete-all requires two UI confirmations, the exact
+  `DELETE ALL MUSE DATA` phrase, backup-loss acknowledgement, and the same
+  stopped-service activation contract. It recreates the migrated empty database
+  and required private directories without deleting application code or builds.
+- The Settings API remains on the production loopback application only. Its
+  mutations are typed, body-limited, JSON-only, and same-origin checked. The LAN
+  listener exposes none of the Settings, backup, device, maintenance, core CRUD,
+  media browsing, documentation, or main SPA surface.
+
+### Accessibility and interaction decisions
+
+- Essential Settings, Home, power, sleep, dialog, and recovery controls retain
+  at least `56 × 56 px` targets, visible focus, semantic labels, keyboard use,
+  reduced-motion behavior, and text alongside state or color.
+- Dialog focus is trapped and restored. Destructive flows focus Cancel first;
+  the two delete-all stages intentionally remount so the safer action receives
+  focus again before the exact phrase can be entered.
+- Screen sleep preserves the active route and consumes the wake interaction.
+  The startup gate preserves the requested deep link and never replays the full
+  Splash during internal navigation.
+
+### Verification results
+
+- Ruff format/lint and strict mypy passed. The complete backend suite passed 246
+  tests with 85.63% branch coverage against the unchanged 85% threshold. A
+  focused independent replay of the Settings, backup/maintenance, and system API
+  suites passed 26 tests; no new dependency or Alembic revision was required.
+- Frontend typecheck, ESLint with zero warnings, Prettier, and both production
+  builds passed. Vitest passed 220 tests in 34 files.
+- The expanded route-shell Playwright check passed in 13.1 seconds across Home,
+  Wardrobe, Outfit Builder, Saved Outfits, Settings, and all five Settings
+  subsections at `1280 × 800`, with locally mocked readiness/status contracts,
+  local fonts, no external request, and no page-level horizontal overflow.
+- The isolated production P6 Playwright scenario passed in 19.2 seconds. It
+  observed the real Splash/readiness transition, traversed all Settings
+  sections, persisted Reduced Motion, generated a valid PNG garment and outfit,
+  created a checked backup, staged and activated restore only after stopping
+  both listeners, verified restored database/media, required both delete-all UI
+  stages, activated deletion offline, and rechecked readiness, reset
+  preferences, LAN-route isolation, local-only browser requests, SQLite
+  `quick_check`, foreign keys, empty data/media rows, and empty backup storage.
+  The first full replay caught the final delete-confirmation focus regression;
+  the dialog lifecycle was corrected and the complete scenario then passed.
+- The existing production garment/outfit scenarios passed 2/2 in 19.8 seconds,
+  and the P4 phone-upload scenario passed 1/1 in 17.5 seconds after P6. Both
+  listeners released their ports after each run.
+- A fresh database upgraded through `20260715_0003`, downgraded to
+  `20260715_0002`, and re-upgraded to head. Alembic detected no pending model
+  operations; SQLite `quick_check` and `integrity_check` returned `ok`, with no
+  foreign-key violations.
+- The final device build emitted a 501.51 kB main JavaScript entry (152.19 kB
+  gzip) and 63.23 kB main CSS (10.42 kB gzip), with Settings sections split into
+  lazy chunks from 1.48 to 8.21 kB JavaScript. The unchanged dedicated mobile
+  build emitted 213.74 kB JavaScript (67.48 kB gzip) and 10.00 kB CSS (2.81 kB
+  gzip). Vite still reports the main-entry `>500 kB` advisory.
+- On the local macOS ARM64 development machine, the warmed production main
+  process used 89,040 KiB RSS and the restricted listener used 88,784 KiB RSS.
+  Five local calls settled at about 1.8–2.2 ms for the empty storage summary and
+  4.1–4.3 ms for device status. An empty-database backup produced a 4,580-byte
+  archive in 8.5 ms. These small-data measurements are regression evidence,
+  not representative backup-load or Raspberry Pi acceptance results.
+
+These times and bundle sizes are development-machine regression evidence, not
+Raspberry Pi performance measurements.
+
+### CI, documentation, and Codex assistance
+
+- CI now runs the locked P6 Playwright command against disposable loopback
+  listeners, verifies final migration and SQLite state, stops both processes on
+  every outcome, scans for maintenance archives/logs/PID files, and scrubs P6
+  diagnostics before short-retention failure upload.
+- README, contributor, backend/frontend runtime, architecture, scope, backlog,
+  design-system, Splash, Home, Settings, user-flow, and Raspberry Pi validation
+  documentation now describe the implemented contracts and their limits.
+- Codex was used for repository audit, coordinated backend/frontend/release
+  implementation, threat-focused review of the two-listener and archive
+  boundaries, test design, failure diagnosis, accessibility correction, and
+  documentation. Muse has no runtime dependency on Codex, OpenAI models, cloud
+  services, or an Internet connection.
+- The official working-tree security diff scan reviewed all 57 assigned files
+  and coverage receipts. It produced no reportable finding. One developer-only
+  E2E process-control candidate was dynamically validated and excluded by the
+  product-boundary policy; the harness was nevertheless hardened with private
+  exclusive runtime roots, no-follow file creation, retained child-process
+  authority, command-identity checks, and bounded shutdown waits.
+
+### Remaining validation
+
+- No Raspberry Pi result is claimed. P7 must install and validate the real
+  Chromium kiosk, systemd supervision, display/touch configuration, storage,
+  Wi-Fi, service activation, and narrowly privileged device actions.
+- Run the expanded physical procedure on the intended Pi 5 and touchscreen,
+  recording cold/warm Splash and navigation timing, main/listener/Chromium RSS,
+  backup peak RSS and storage writes, touch dexterity, interruption recovery,
+  temperature, and throttling.
+
 ## 2026-07-15 — P4.4 secure local-network phone upload
 
 ### Scope completed

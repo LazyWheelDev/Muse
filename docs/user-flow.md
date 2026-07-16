@@ -238,13 +238,55 @@ Settings
 
 Settings available in the MVP:
 
-- Appearance
+- W & N
 - Display
-- Startup
-- Data & Backup
+- Data
+- Device
 - About Muse
 
+The round Power control remains separate from those five sections. It opens
+capability-aware display and device actions without exposing the underlying
+operating system.
+
 Settings should remain secondary and never interfere with the main wardrobe experience.
+
+```text
+Settings
+    ├─ W & N → local/offline and phone-listener status
+    ├─ Display → interface dimming, timeout, Reduced Motion
+    ├─ Data → storage, backups, restore, cleanup, delete all
+    ├─ Device → safe status and deployment capabilities
+    ├─ About Muse → local-first product and license information
+    └─ Power → Sleep Display or capability-aware unavailable actions
+```
+
+Every subsection Back action returns to Settings. Home returns directly to Home.
+Already persisted preferences remain applied. The application-level sleep layer
+wakes on touch, pointer, or keyboard input and preserves the current route.
+
+## Backup and restore flow
+
+```text
+Data
+    ↓
+Create Backup
+    ↓
+Snapshot + checksum validation
+    ↓
+Backup listed locally
+```
+
+A replace restore requires explicit confirmation. The running application
+validates and stages the archive, creates a safety backup, and reports that a
+restart is required. It does not claim that live data changed. P7 service
+coordination will stop both listeners, invoke the offline activation command,
+and restart Muse. After activation, readiness and SQLite/media reconciliation
+must succeed before Home appears.
+
+Delete all data uses two visual confirmations plus the exact typed phrase. The
+backend additionally requires acknowledgement that local backups are removed.
+Activation is offline for the same two-listener safety reason and recreates an
+empty migrated data layout without deleting the application.
 
 ---
 

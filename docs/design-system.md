@@ -482,9 +482,20 @@ Animations must support understanding rather than decoration.
 
 ### Reduced Motion
 
-Muse should support a reduced-motion setting where possible.
+Muse persists a Reduced Motion preference. When enabled, page and card motion
+uses restrained fades, the Splash displays its final composition without the
+falling droplet or arriving-letter choreography, and readiness remains fully
+visible. The setting must not suppress progress, success, error, focus, or
+selection feedback.
 
 Essential functionality must remain fully usable without animation.
+
+### Display Dimming
+
+The software MVP may dim the complete application with a non-interactive visual
+overlay. This is an interface-brightness control, not a claim that the physical
+backlight changed. It must retain a safe visible minimum, leave dialogs and
+focus behavior usable, and never intercept touch or keyboard input.
 
 ---
 
@@ -516,8 +527,14 @@ It must not delay access unnecessarily.
 Recommended total duration:
 
 - Approximately `2.5–4 seconds`
-- Skippable after the first launch if needed
-- Reduced or disabled through accessibility preferences
+- Played once during a cold browser session
+- Not replayed during internal navigation
+- Reduced through the persisted accessibility preference
+
+The final composition may be held when the local application is not ready. The
+complete sequence must not loop. A persistent readiness failure keeps the Muse
+identity visible and provides a safe Retry action without exposing exception
+text, local paths, or operating-system controls.
 
 ---
 
@@ -558,6 +575,11 @@ Muse should support:
 - Clear error messages
 - Confirmation before destructive actions
 - Interfaces usable with limited dexterity
+
+Champagne is an identity accent, not the default color for small functional
+text. Use primary text or Champagne Dark where the lighter accent would not
+provide sufficient contrast against ivory. Status meaning must always be
+communicated by text or an icon in addition to color.
 
 Accessibility is part of the product design, not an optional addition.
 

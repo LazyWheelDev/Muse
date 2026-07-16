@@ -44,6 +44,12 @@ practical scales, and changed layer order. Soft-delete at least one garment only
 after an outfit references it, and soft-delete at least one outfit so preview
 ownership and retained-reference behavior can be checked.
 
+Create two verified Muse backups on disposable storage: one before the
+representative data set and one after it. Reserve enough free space for the
+complete archive, a restore staging copy, a pre-operation safety backup, and
+rollback staging. Record the configured archive limits and the storage free
+before and after each operation.
+
 Do not use the only copy of personal wardrobe data for destructive or power-loss
 testing.
 
@@ -60,6 +66,9 @@ vcgencmd measure_temp
 pgrep -af 'muse-backend (serve|serve-phone-upload)'
 curl --fail --show-error http://127.0.0.1:8000/api/v1/health
 curl --fail --show-error http://127.0.0.1:8000/api/v1/readiness
+curl --fail --show-error http://127.0.0.1:8000/api/v1/settings/capabilities
+curl --fail --show-error http://127.0.0.1:8000/api/v1/settings/device-status
+curl --fail --show-error http://127.0.0.1:8000/api/v1/settings/maintenance-status
 ss -ltnp
 ```
 
@@ -84,7 +93,7 @@ Measure five cold starts and five warm repetitions. Record median and slowest
 results for:
 
 1. coordinated main and phone-upload service start to readiness;
-2. Chromium launch to visible Wardrobe content;
+2. Chromium launch through the Splash to visible Home content;
 3. first Wardrobe render with 60 or more garments;
 4. category change;
 5. grid-to-Details navigation;
@@ -99,8 +108,11 @@ results for:
 14. first Saved Outfits render and vertical scroll with 60 or more outfits;
 15. phone-session creation to visible QR;
 16. phone page open to visible connected state;
-17. Wi-Fi upload acknowledgement and processing completion; and
-18. completion to the imported garment becoming visible on Muse.
+17. Wi-Fi upload acknowledgement and processing completion;
+18. completion to the imported garment becoming visible on Muse;
+19. opening each Settings subsection and returning to Settings;
+20. creating and validating a representative local backup; and
+21. staging restore to its explicit restart-required response.
 
 Use Chromium DevTools only for a diagnostic rerun because it changes memory and
 timing. For service timing, capture monotonic timestamps around readiness polls.
@@ -152,6 +164,14 @@ regenerate previews on page open. The first visible cards should load promptly;
 later rows may lazy-load. Record dropped frames or visible stalls while
 scrolling.
 
+Measure backup creation with both a small and the representative data set while
+sampling the main process RSS, CPU, database/WAL sizes, storage writes,
+temperature, and throttling. The completed archive must appear only after its
+manifest, checksums, SQLite integrity, foreign keys, and migration revision have
+passed. Peak memory must remain bounded by streaming rather than grow with the
+largest archived entry. Record storage-summary latency before, during, and
+after the backup; Settings must remain responsive.
+
 While a phone upload is receiving and processing, call main health, readiness,
 and Wardrobe collection endpoints at a bounded rate and continue using the
 touchscreen. Record p50/p95 response latency, browser long tasks, listener and
@@ -197,6 +217,11 @@ Inspect browser and listener traffic. Every runtime request must target the Pi;
 no font, icon, script, analytics, QR, tunnel, conversion, model, or other cloud
 service may be contacted. Removing Node from `PATH` must not affect either
 production listener after `dist` and `dist-phone` have been built elsewhere.
+
+Reload Muse while the Internet and LAN are unavailable but loopback remains.
+The Splash must still reach Home after local readiness, Settings must continue
+to persist Display preferences, and W & N must describe the unavailable network
+without presenting core wardrobe use as failed.
 
 ## Recovery and interruption
 
@@ -245,14 +270,26 @@ Use disposable data for these tests.
 14. Cancel while waiting, while receiving where supported, and while processing.
     New work must stop immediately; a garment already durably committed must be
     preserved even if cancellation wins the visible session race.
+15. Stage a restore, verify the running database has not changed, stop both
+    listeners, invoke `muse-backend apply-staged-maintenance --confirm
+"APPLY STAGED MUSE MAINTENANCE"`, and restart. Confirm readiness, SQLite
+    integrity, foreign keys, registered media, preferences, garments, and
+    outfits. Repeat with an intentionally corrupted staged file and confirm the
+    active data remains unchanged.
+16. Against disposable data only, stage delete-all with both confirmations and
+    backup-loss acknowledgement. Confirm the operation remains pending while
+    services run, apply it only after stopping both listeners, then verify a
+    migrated empty database, required private directories, and a healthy
+    restart. Application files, frontend builds, and the Python environment
+    must remain intact.
 
 Never automate hard power cuts against irreplaceable storage.
 
 ## Touchscreen and kiosk acceptance
 
-At `1280 × 800`, verify Wardrobe, Add Garment, Details, Outfit Builder, Saved
-Outfits, dialogs, grid, and fullscreen garment-image mode with touch and a
-keyboard:
+At `1280 × 800`, verify Splash, Home, Wardrobe, Add Garment, Details, Outfit
+Builder, Saved Outfits, Settings and every Settings subsection, dialogs, grid,
+sleep overlay, and fullscreen garment-image mode with touch and a keyboard:
 
 - no page-level horizontal overflow;
 - all essential controls have at least `56 × 56 px` targets;
@@ -262,6 +299,22 @@ keyboard:
 - reduced-motion mode preserves all functionality;
 - long metadata and validation messages remain readable; and
 - kiosk reload, direct route navigation, and browser Back preserve context.
+
+Observe five cold Splash runs. The composition must have one gold `M`, dark
+`USE`, the local tagline, no duplicate wordmark, no overflow, no layout shift,
+and no external request. Delay readiness in a controlled deployment and confirm
+the final composition waits without replaying; stop the backend and confirm the
+branded recovery and Retry states. Enable Reduced Motion, reload, and confirm
+the shortened path still waits for readiness and reaches the requested route.
+
+Verify the Settings landing page has the exact `W & N` label, the approved
+two-card then three-card grid, Home action, and round Power control. Every card,
+Back action, slider, toggle, select, backup action, confirmation, and power
+action must meet the touch target, focus, contrast, keyboard, and no-overflow
+criteria. Sleep must preserve the route and consume the wake input. Unsupported
+restart, reboot, shutdown, Wi-Fi-management, and hardware-brightness controls
+must remain visibly unavailable until their P7 capabilities are installed and
+physically validated.
 
 For Outfit Builder, verify direct Canvas selection and drag, every semantic move,
 scale, rotate, layer, reset, remove, clear, save, update, save-as-new, cancel,
@@ -301,6 +354,37 @@ focus with a development keyboard, reduced motion, readable contrast, no
 hover-only action, no external request, and no horizontal overflow. JPEG, PNG,
 and WebP must complete; HEIC and HEIF must show the documented actionable
 unsupported-format message.
+
+## Settings, Splash, and maintenance acceptance criteria
+
+A Raspberry Pi P6 experience run passes only when all of the following are
+true:
+
+- the cold Splash completes smoothly when readiness is early, holds calmly when
+  readiness is late, and exposes a usable Retry path when the backend is
+  unavailable;
+- Reduced Motion, interface brightness, and screen timeout persist across a
+  Chromium restart without making the display unusable;
+- network, device, capability, storage, and maintenance status remain bounded,
+  sanitized, and responsive without exposing paths, tokens, credentials, raw
+  commands, or environment values;
+- a representative backup contains the documented closed manifest, consistent
+  SQLite snapshot, and only snapshot-owned media, and validation has bounded
+  peak memory;
+- restore and delete-all never activate while either listener holds its runtime
+  lease, survive interruption through rollback staging, and leave readiness,
+  SQLite integrity, foreign keys, and media ownership valid after restart;
+- the LAN listener returns `404` for every Settings and maintenance route while
+  the main application remains loopback-only;
+- every Settings and Splash runtime asset is served locally and production
+  remains Node-free after both frontend builds exist; and
+- no Settings, Splash, Home, dialog, recovery, or sleep state has page-level
+  horizontal overflow at `1280 × 800`, and essential controls meet `56 × 56 px`.
+
+These are target-hardware acceptance conditions, not development-machine
+results. Record cold and warm timing, main/listener/Chromium RSS, backup peak
+RSS, archive sizes, storage-summary latency, temperature, and throttling without
+turning an unmeasured value into a release claim.
 
 ## Current non-Pi evidence and remaining status
 

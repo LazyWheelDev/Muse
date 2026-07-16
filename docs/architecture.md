@@ -28,6 +28,7 @@ Local data root
   ├─ media/outfits/previews/
   ├─ tmp/uploads/<import-attempt>/
   ├─ tmp/previews/<preview-attempt>/
+  ├─ maintenance/
   ├─ .locks/
   └─ backups/
 ```
@@ -59,6 +60,11 @@ Listener bind, advertised address, and retention values remain operator
 environment configuration for this milestone. P4.4 does not add privileged
 network controls, listener diagnostics, or QR-session creation to Settings; the
 consumer entry is Add Garment.
+
+P6 adds Settings only to the main loopback application. The restricted LAN
+factory still mounts no Settings, backup, data-maintenance, device-information,
+or power route. W & N may inspect the restricted listener through the existing
+bounded server-to-server probe; it never expands the listener surface.
 
 ## Frontend
 
@@ -117,6 +123,27 @@ development viewports.
 Required fonts and interface assets are part of the Vite bundle. Approved PNG
 mockups are design references, not runtime assets. The frontend cannot assume
 Internet access or a hard-coded production host.
+
+### Startup and application preferences
+
+The frontend owns a single startup/readiness layer above the normal route tree.
+It plays the branded Splash once on a cold browser session, holds its final
+composition while `GET /api/v1/readiness` is not ready, and presents a bounded
+recovery state after persistent failure. Internal navigation never replays the
+full sequence. Reduced Motion replaces the physical letter and droplet movement
+with the final wordmark and restrained fades.
+
+TanStack Query remains the server-state owner for Settings. The backend stores a
+closed set of explicit application preferences in `application_settings`:
+device name, safe interface-dimming percentage, screen timeout, Reduced Motion,
+and Splash mode. The API never accepts an arbitrary key or filesystem path. The
+browser may apply an immediate visual hint while loading, but SQLite remains the
+authoritative persisted value.
+
+Interface brightness is an application overlay, not physical backlight control.
+Screen timeout displays an in-browser sleep layer and does not stop services.
+Touch, pointer, or keyboard input wakes it without losing the current route or
+editor state.
 
 ## Backend
 
@@ -217,6 +244,49 @@ The saved-outfit contract is:
   placements transactionally; and
 - `DELETE /api/v1/outfits/{id}` soft-deletes the outfit without deleting any
   garment or registered preview bytes.
+
+### Settings, platform information, and data maintenance
+
+Settings endpoints live below `/api/v1/settings` on the main loopback listener.
+They expose typed preferences, safe network status, storage summary, device
+status, capability states, a safe staged-maintenance status, backup management,
+bounded temporary cleanup, and staging of restore or delete-all operations.
+Mutation routes accept JSON only
+and apply an additional same-origin check. Responses expose neither raw paths,
+environment variables, Wi-Fi credentials, command output, nor phone-upload
+secrets.
+
+The platform adapter uses bounded standard-library reads for operating-system,
+architecture, memory, uptime, disk, and optional thermal information. It never
+invokes a shell. Wi-Fi management, hardware brightness, application restart,
+device reboot, and shutdown remain unavailable until P7 installs and validates
+narrow privileged adapters. Display sleep and interface dimming remain
+application-level capabilities.
+
+Muse backups use a versioned local ZIP contract. Creation starts from the
+SQLite online-backup API, removes operational phone-upload sessions from the
+snapshot, copies only media referenced by that snapshot, computes SHA-256
+checksums, writes a closed manifest, validates the completed archive, and
+atomically promotes it below `backup_root`. It excludes nested backups,
+temporary uploads, caches, locks, logs, environment files, and runtime secrets.
+Archive creation and validation are streamed and subject to configured entry,
+expanded-size, archive-size, and compression-ratio limits.
+
+Restore is deliberately two-phase. The loopback API validates an existing local
+archive, creates a safety backup, extracts into a private maintenance staging
+directory, and writes a durable pending marker. It returns
+`staged_restart_required`; it never claims live data changed. The CLI command
+`apply-staged-maintenance` acquires an exclusive runtime-services lease and
+refuses activation while either server is running. With services stopped it
+moves the staged database and media into place, verifies SQLite, and restores
+the previous paths if activation fails. Delete-all uses the same offline lease,
+preserves the application installation, recreates the migrated empty database
+and directory structure, and removes local backups only after the explicit
+backup-loss acknowledgement.
+
+Both Uvicorn processes hold shared leases for their complete lifetimes. P7
+systemd units will coordinate stop, offline maintenance activation, migration,
+and restart; P6 does not install those units or execute privileged commands.
 
 ## Persistence model
 

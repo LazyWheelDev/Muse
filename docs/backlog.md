@@ -285,47 +285,54 @@ extension and is not part of P5 completion.
 
 ## P6.1 Navigation
 
-- [ ] Create the primary navigation
-- [ ] Add Wardrobe
-- [ ] Add Outfit Builder
-- [ ] Add Saved Outfits
-- [ ] Add Settings
-- [ ] Ensure navigation is touch-friendly
-- [ ] Avoid hover-only behavior
+- [x] Keep Home as the four-card primary navigation root
+- [x] Preserve Wardrobe, Details, Builder, Saved Outfits, and import context
+- [x] Add the approved five-card Settings landing screen
+- [x] Add dedicated W & N, Display, Data, Device, and About routes
+- [x] Add consistent Home, Back, not-found, and unsaved-change escapes
+- [x] Keep navigation touch-friendly and independent of hover
+- [x] Add the capability-aware Power menu and application sleep overlay
 
 ---
 
 ## P6.2 Visual System
 
-- [ ] Define typography
-- [ ] Define spacing
-- [ ] Define icons
-- [ ] Define surfaces and cards
-- [ ] Define transitions
-- [ ] Define empty states
-- [ ] Define loading states
-- [ ] Ensure consistent component styling
+- [x] Apply the approved local Inter and Playfair Display typography
+- [x] Apply the Muse spacing, icon, surface, card, radius, and shadow tokens
+- [x] Complete the approved Home and Settings compositions
+- [x] Reuse coherent headers, buttons, dialogs, panels, controls, and status states
+- [x] Keep transitions restrained and respect Reduced Motion
+- [x] Standardize understandable loading, empty, offline, error, and success states
+- [x] Preserve the approved ivory/champagne identity with no dark theme
 
 ---
 
 ## P6.3 Startup Experience
 
-- [ ] Create the Muse startup screen
-- [ ] Add the Muse logo
-- [ ] Add a short startup animation
-- [ ] Transition smoothly to the home screen
-- [ ] Avoid delaying application readiness unnecessarily
+- [x] Implement the local CSS/HTML Muse wordmark and droplet sequence
+- [x] Coordinate the Splash with the real readiness contract
+- [x] Hold the final composition when readiness is late without looping
+- [x] Add bounded retry and a branded persistent-failure recovery state
+- [x] Add cold-start, reload, internal-navigation, and deep-link replay behavior
+- [x] Add a persisted Reduced Motion path
+- [x] Transition through the brief black state into Home or the requested route
 
 ---
 
 ## P6.4 Accessibility and Touch
 
-- [ ] Use large touch targets
-- [ ] Ensure readable text
-- [ ] Provide visible focus states
-- [ ] Support keyboard navigation during development
-- [ ] Avoid controls requiring precise pointer movement
-- [ ] Test important flows with limited dexterity in mind
+- [x] Keep essential controls at least `56 × 56 px`
+- [x] Use readable text and functional contrast instead of champagne-only labels
+- [x] Provide visible focus, logical keyboard access, and semantic labels
+- [x] Trap and restore dialog focus and keep the safer Cancel action focused
+- [x] Provide semantic alternatives to gestures and avoid precise-pointer controls
+- [x] Announce progress and avoid color-only communication
+- [x] Preserve functionality with Reduced Motion and the display asleep
+
+P6 is software-complete. The release contract is verified on development and CI
+environments, but real touchscreen dexterity, Raspberry Pi timing, thermal,
+throttling, display, systemd, kiosk, and power-action acceptance remains P7
+work. Privileged controls stay unavailable until that validation is complete.
 
 ---
 

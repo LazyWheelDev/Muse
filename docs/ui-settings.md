@@ -87,21 +87,24 @@ It must not appear as:
 WNN
 ```
 
-The card uses a Wi-Fi icon and opens network configuration.
+The card uses a Wi-Fi icon and opens safe Wi-Fi and network status.
 
 ### Purpose
 
 The W & N section allows the user to:
 
 - View the current network status
-- View the connected Wi-Fi network
-- Search for available Wi-Fi networks
-- Connect to a Wi-Fi network
-- Disconnect from the current network
-- Forget a saved network
+- View the device hostname and preferred local address
+- View the safely identified active interface when available
 - View the Muse local network address
 - Access the phone upload connection information
-- Display a local upload QR code when available
+- Understand whether the restricted phone-upload listener is available
+- Understand that core Muse features remain available without Internet
+
+Searching for networks, handling Wi-Fi credentials, connecting, disconnecting,
+and forgetting networks require a deployment-specific capability. They are not
+presented as working controls unless the Raspberry Pi adapter reports that the
+capability is genuinely available.
 
 ---
 
@@ -113,9 +116,11 @@ The W & N screen must clearly distinguish:
 
 ```text
 Connected
-Disconnected
-Connecting
-Connection failed
+Local network only
+Offline
+Checking
+Listener unavailable
+Address unavailable
 ```
 
 Internet access is optional for core Muse features.
@@ -132,19 +137,17 @@ The absence of Internet must not be presented as a critical device failure.
 
 ---
 
-## Wi-Fi Connection Flow
+## Wi-Fi Management Capability
 
-When the user selects a network:
+Direct Wi-Fi credential management is not required for the completed software
+MVP. Until a narrow Raspberry Pi adapter is installed and physically validated,
+Muse reports that changing networks is completed during device setup. It must
+not show a simulated connection flow or store Wi-Fi passwords in application
+settings.
 
-1. Muse opens a password field when required.
-2. The on-screen keyboard becomes available.
-3. The user confirms the connection.
-4. Muse displays a connecting state.
-5. Muse confirms success or explains the failure.
-
-Passwords must never remain visible by default.
-
-The user may temporarily reveal the password through a visible control.
+If this capability is activated in a later deployment, passwords must never be
+returned by the API, logged, stored in the generic settings table, or remain
+visible by default.
 
 ---
 
@@ -155,9 +158,9 @@ The W & N section may display:
 - Device hostname
 - Local IP address
 - Local upload URL
-- QR code for phone upload
-- Current Wi-Fi network
-- Signal status
+- Restricted listener availability
+- Active interface when safely available
+- Optional Internet status as a secondary signal
 
 Example:
 
@@ -176,29 +179,23 @@ The Display card opens visual and screen-related settings.
 
 ### Display Settings
 
-Initial settings may include:
+The P6 software settings include:
 
-- Screen brightness
+- Interface brightness
 - Automatic screen timeout
-- Interface scale
-- Text size
 - Reduced motion
-- Fullscreen kiosk status
-- Touch calibration access when supported
+- Splash mode
 
-The MVP should prioritize:
-
-```text
-Brightness
-Screen timeout
-Reduced motion
-```
+Interface scale, text size, hardware backlight control, kiosk status, and touch
+calibration are not exposed as working software controls in P6.
 
 ---
 
-## Brightness
+## Interface Dimming
 
-Brightness uses a large touch-friendly slider.
+The completed software MVP uses a large touch-friendly interface-dimming
+slider. This is a visual overlay and is not described as physical backlight
+control. Hardware brightness remains a separate capability for P7.
 
 The current value should update immediately.
 
@@ -212,7 +209,7 @@ The interface should provide:
 Example:
 
 ```text
-Brightness: 70%
+Interface brightness: 70%
 ```
 
 The screen must never become completely invisible through an accidental setting.
@@ -311,6 +308,13 @@ The user should be able to export the backup to supported local storage.
 
 The backup format must be documented and versioned.
 
+Backup creation uses a consistent SQLite snapshot and copies only registered
+persistent media. The archive excludes temporary uploads, caches, logs,
+environment files, nested backups, and operational phone-upload sessions. A
+manifest records the format version, creation time, application version, entry
+sizes, and checksums. Temporary archives are never listed as successful and the
+final file is promoted atomically.
+
 ---
 
 ## Restore Backup
@@ -328,6 +332,14 @@ Before replacing existing data:
 2. Explain what will be replaced.
 3. Require explicit confirmation.
 4. Recommend creating a current backup.
+
+Restore is split into validation/staging and activation. Muse validates the
+closed archive structure, checksums, version, SQLite integrity, migrations,
+available space, path safety, and media ownership before staging anything.
+Because the main application, phone listener, and worker share SQLite and local
+media, activation occurs only while those processes are stopped. A staged
+restore is described as pending, never as completed. The P7 supervisor contract
+will coordinate activation on the physical device.
 
 ---
 
@@ -354,11 +366,15 @@ This will permanently remove all garments, images, saved outfits, and local pref
 
 A typed confirmation may be required.
 
-Example:
+Exact completed-MVP phrase:
 
 ```text
-Type DELETE to continue.
+Type DELETE ALL MUSE DATA to continue.
 ```
+
+The completed MVP requires this typed confirmation in addition to both visual
+confirmation steps. The backend never accepts a user-provided path and
+preserves the application installation and required directory structure.
 
 ---
 
@@ -554,6 +570,7 @@ Available actions may include:
 ```text
 Sleep Display
 Restart Muse
+Restart Device
 Shut Down
 Cancel
 ```
@@ -564,11 +581,18 @@ Turns off or dims the display while keeping Muse running.
 
 ### Restart Muse
 
-Restarts the device or application.
+Requests an application restart only when a configured process-supervisor
+capability exists.
+
+### Restart Device
+
+Restarts the Raspberry Pi only when the privileged deployment capability is
+available and separately confirmed.
 
 ### Shut Down
 
-Safely shuts down the Raspberry Pi.
+Safely shuts down the Raspberry Pi only when the privileged deployment
+capability is available and separately confirmed.
 
 ### Cancel
 
@@ -576,7 +600,12 @@ Closes the power menu without changing the device state.
 
 ---
 
-## Shutdown Safety
+## Capability and Shutdown Safety
+
+P6 does not execute privileged restart or shutdown commands. Development and CI
+show those actions as unavailable, and Raspberry Pi activation remains P7 work.
+No generic command string, `shell=True`, broad sudo rule, or root web process is
+permitted.
 
 Before shutdown, Muse must:
 

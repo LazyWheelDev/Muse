@@ -48,12 +48,28 @@ category navigation is the Wardrobe's only collection refinement.
 - Saved outfits in the approved three-column grid
 - Immutable local `600 × 750` preview WebP files
 
+## Settings and startup
+
+- Approved five-card Settings layout: W & N, Display, Data, Device, About Muse
+- Persisted interface dimming, screen timeout, and Reduced Motion preferences
+- Safe local storage summary, backup creation, archive validation, staged restore,
+  and guarded data reset
+- Capability-aware network, device, and power information without privileged
+  command execution
+- Branded Splash sequence integrated with real backend readiness and a
+  reduced-motion recovery path
+- Consistent loading, offline, empty, error, success, and destructive states
+
 ## Device
 
-- Raspberry Pi support
-- Touchscreen interface
-- Kiosk mode
-- Automatic startup
+- Raspberry Pi-compatible software and narrow platform-capability contracts
+- Touchscreen interface at `1280 × 800`
+- Node-free production builds served by the loopback backend
+
+Physical systemd installation, Chromium kiosk installation, display/touch
+calibration, privileged restart/shutdown activation, and hardware performance
+acceptance belong to P7. P6 must report these capabilities honestly as requiring
+deployment configuration rather than simulating success.
 
 ---
 
@@ -85,6 +101,9 @@ The MVP is considered successful if a user can:
 5. Save the outfit.
 6. Relaunch Muse and recover all saved data.
 7. Experience the application through a polished touchscreen interface.
+8. Inspect safe device and network status, change application display preferences,
+   and create a verified local backup without Internet access.
+9. Recover gracefully when startup readiness is delayed or unavailable.
 
 Exact duplicate-outfit detection, automatic metadata detection, HEIC/HEIF
 decoding, and a fullscreen or long-press Saved Outfit preview are optional

@@ -5,12 +5,14 @@ touchscreen. It lets users organize clothing, compose garments on a silhouette,
 control layers, and save outfits without requiring a cloud account, subscription,
 or Internet connection.
 
-The current implementation includes the complete garment, phone-import, and
-outfit vertical slices: secure local streaming import, short-lived QR handoff,
-exact-original preservation, safe local derivatives, SQLite persistence,
-Wardrobe and Clothing Details, the manual Outfit Builder, deterministic local
-preview generation, and the approved Saved Outfits grid. Kiosk deployment and
-physical Raspberry Pi validation remain later milestones.
+The current implementation includes the complete garment, phone-import, outfit,
+and product-experience slices: secure local streaming import, short-lived QR
+handoff, exact-original preservation, safe local derivatives, SQLite
+persistence, Wardrobe and Clothing Details, the manual Outfit Builder,
+deterministic local preview generation, the approved Saved Outfits grid,
+readiness-aware Splash, typed Settings, local backups, and capability-aware
+device information. Kiosk deployment and physical Raspberry Pi validation
+remain later milestones.
 
 ## MVP principles
 
@@ -406,6 +408,59 @@ Raspberry Pi 5 latency, memory, thermal, touch, storage, and interruption checks
 remain required by
 [docs/raspberry-pi-validation.md](docs/raspberry-pi-validation.md).
 
+## Splash, Settings, and local data maintenance
+
+Muse starts through a local CSS/SVG Splash sequence coordinated with
+`GET /api/v1/readiness`. Readiness may complete before the designed sequence; if
+it takes longer, Muse holds the final wordmark and retries at a bounded rate.
+Persistent failure retains a branded Retry state instead of exposing a backend
+trace. The full sequence plays once per cold browser session, does not replay
+during internal navigation, and has a restrained Reduced Motion path.
+
+`/settings` follows the approved five-card layout:
+
+- **W & N** reports safe local-network and restricted-listener status. It does
+  not manage Wi-Fi credentials in P6.
+- **Display** persists interface dimming, screen timeout, Reduced Motion, and
+  Splash mode. Dimming is an application overlay, not hardware backlight
+  control; the sleep overlay preserves the active route.
+- **Data** reports local storage, creates and lists local backups, downloads or
+  deletes a selected backup, cleans bounded temporary data, and stages restore
+  or delete-all maintenance.
+- **Device** shows sanitized local information and explicit capability states.
+  Privileged restart, reboot, shutdown, systemd, kiosk, Wi-Fi management, and
+  hardware brightness remain unavailable until P7.
+- **About Muse** describes the local-first privacy model, license, repository,
+  and Build Week context using only bundled content.
+
+Settings use the main loopback API only. The restricted phone listener mounts no
+Settings, backup, device, maintenance, media, health, documentation, or main SPA
+route. Settings mutation requests must be JSON and pass the extra origin check.
+
+Backups are private `*.muse-backup.zip` archives below the configured data root.
+Each contains a SQLite online snapshot, only media referenced by that snapshot,
+and a closed versioned manifest with sizes and SHA-256 checksums. Operational
+phone-upload sessions, nested backups, temporary files, logs, caches,
+environment files, and secrets are excluded. Restore validates the archive and
+stages replacement data but returns `staged_restart_required`; it never swaps a
+database used by a running listener.
+
+Apply staged maintenance only after both Muse listeners are stopped:
+
+```bash
+cd backend
+uv run muse-backend apply-staged-maintenance \
+  --confirm "APPLY STAGED MUSE MAINTENANCE"
+```
+
+The command obtains an exclusive runtime lease and refuses to run while either
+listener holds its shared lease. Restore keeps the pre-operation safety backup.
+Delete-all requires the UI's two confirmations, the exact typed phrase, and
+explicit backup-loss acknowledgement; activation recreates the migrated empty
+database and required local directories without touching application code.
+P7 systemd units will coordinate the stop/apply/migrate/start sequence on the
+physical device.
+
 ## Verification
 
 Run the backend checks:
@@ -439,9 +494,10 @@ npm run test:e2e
 Apply frontend formatting with `npm run format`. The Playwright shell suite uses
 Chromium at the target `1280 × 800` viewport.
 
-The production browser integration suite targets a running same-origin FastAPI
-host. After building the frontend, migrating a disposable empty data root, and
-starting FastAPI as described below, run it in a second terminal with:
+The ordinary and P4 production browser suites target disposable FastAPI
+processes prepared as described below. P6 is different: its harness migrates,
+starts, stops, and restarts both listeners itself, so ports `8000` and `8787`
+must be free before running the P6 command.
 
 ```bash
 cd frontend
@@ -453,6 +509,16 @@ MUSE_MAIN_PID_FILE=/tmp/muse-phone-main.pid \
 MUSE_PHONE_PID_FILE=/tmp/muse-phone-upload.pid \
 MUSE_PHONE_E2E_DATA_ROOT=/tmp/muse-phone-e2e \
 npm run test:e2e:production:p4
+
+MUSE_P6_RUNTIME_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/muse-p6-runtime.XXXXXX")"
+MUSE_P6_DATA_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/muse-p6-data.XXXXXX")"
+chmod 700 "$MUSE_P6_RUNTIME_ROOT" "$MUSE_P6_DATA_ROOT"
+PLAYWRIGHT_BASE_URL=http://127.0.0.1:8000 \
+PLAYWRIGHT_PHONE_UPLOAD_BASE_URL=http://127.0.0.1:8787 \
+MUSE_BACKEND_EXECUTABLE=/absolute/path/to/backend/.venv/bin/muse-backend \
+MUSE_P6_E2E_RUNTIME_ROOT="$MUSE_P6_RUNTIME_ROOT" \
+MUSE_P6_E2E_DATA_ROOT="$MUSE_P6_DATA_ROOT" \
+npm run test:e2e:production:p6
 ```
 
 The first command runs the local garment import/edit/delete flow and the P5
@@ -460,21 +526,34 @@ outfit flow. The P4 command additionally requires the restricted listener and
 uses separate device and phone browser contexts to decode the QR, upload a real
 image, observe automatic completion, restart both disposable test processes,
 verify persistence, and reject replay after restart. CI supplies the backend
-executable and PID-file paths to the Playwright harness; the harness sends local
-process signals and relaunches the two documented CLI commands against the same
-dedicated, initially empty temporary data root. It never reuses the P1/P5 smoke
-database. Muse exposes no restart or privileged test endpoint. The P5 scenario
-imports local garments, creates overlapping placements, transforms
+executable and isolated runtime paths to the Playwright harness. P6 creates a
+private mode-`0700` per-attempt runtime directory, retains the exact child
+process handles it launches, refuses symlinked runtime files, and never signals
+a PID read from a file. It relaunches the two documented CLI commands against
+the same dedicated, initially empty temporary data root. It never reuses the
+P1/P5 smoke database. Muse exposes no restart or privileged test endpoint. The
+P5 scenario imports local garments, creates overlapping placements, transforms
 and layers them, verifies the generated `600 × 750` preview and approved
 three-column grid, reloads, updates, saves as new, deletes, and checks local-only
 requests and `1280 × 800` horizontal overflow. To run only that check, use
 `npm run test:e2e:production:p5` with the same `PLAYWRIGHT_BASE_URL`. Do not
 point any production E2E command at a personal wardrobe database.
 
-The two PID files must already contain the actual disposable listener process
-IDs and be writable by the test user; the harness rewrites them after restart.
-Use the production executable path selected for the test environment (`venv`
-instead of `.venv` on the documented macOS workaround). The CI workflow is the
+The P6 scenario observes the real Splash/readiness transition, exercises all
+Settings sections, persists Reduced Motion, creates and restores a backup,
+applies staged restore and delete-all only after stopping both test listeners,
+then verifies readiness, data integrity, reset behavior, LAN isolation, local
+assets, touch targets, and `1280 × 800` overflow. It is intentionally
+destructive and must use fresh private data and runtime roots.
+
+The P4 PID files must already contain the actual disposable listener process IDs
+and be writable by the test user; that harness rewrites them after restart. The
+P6 harness owns its isolated attempt directories and exact child-process
+handles, starts and stops both disposable listeners itself, and refuses
+non-loopback targets. Its private PID files exist only for bounded CI crash
+cleanup and are never trusted by Playwright as process authority. Use the
+production executable path selected for the test environment (`venv` instead
+of `.venv` on the documented macOS workaround). The CI workflow is the
 canonical complete setup and creates owner-only PID and log files.
 
 ## Production build and startup
@@ -501,6 +580,11 @@ MUSE_SERVE_FRONTEND=true
 MUSE_FRONTEND_BUILD_PATH=/opt/muse/frontend/dist
 MUSE_TRUSTED_HOSTS=["127.0.0.1","localhost"]
 MUSE_ALLOWED_ORIGINS=[]
+MUSE_MAINTENANCE_ROOT=maintenance
+MUSE_MAX_BACKUP_ARCHIVE_BYTES=2147483648
+MUSE_MAX_BACKUP_ENTRY_COUNT=20000
+MUSE_MAX_BACKUP_COMPRESSION_RATIO=200
+MUSE_MAINTENANCE_CLEANUP_BATCH_SIZE=100
 MUSE_PHONE_UPLOAD_ENABLED=true
 MUSE_PHONE_UPLOAD_BIND_HOST=192.168.1.50
 MUSE_PHONE_UPLOAD_PORT=8001

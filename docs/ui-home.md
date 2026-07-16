@@ -247,6 +247,12 @@ While the Home screen is loading:
 
 The page should appear quickly after the Splash Screen.
 
+The P6 implementation keeps Home behind the readiness-aware startup layer. Home
+is mounted only after the local database, migrations, storage, and configured
+frontend build report ready. Returning Home through internal navigation does not
+replay the complete Splash. A deep-link startup reveals the requested route
+after the same readiness gate instead of forcing an intermediate Home visit.
+
 ---
 
 ## Error State
@@ -290,6 +296,11 @@ Open Outfit Builder
 Open Saved Outfits
 Open Settings
 ```
+
+The four entire card surfaces are semantic links and use the labels above. Each
+card remains larger than the `56 × 56 px` minimum, has a visible focus state,
+and keeps its destination usable when motion is reduced. Card motion is visual
+feedback only; no navigation depends on hover or animation.
 
 ---
 

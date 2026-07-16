@@ -67,8 +67,13 @@ be absolute or relative; writable child paths resolve beneath `MUSE_DATA_ROOT`.
 | `MUSE_THUMBNAIL_ROOT`                         | `media/garments/thumbnails` | Wardrobe grid thumbnails                                 |
 | `MUSE_CUTOUT_IMAGE_ROOT`                      | `media/garments/cutouts`    | Optional best-effort cutouts                             |
 | `MUSE_OUTFIT_PREVIEW_ROOT`                    | `media/outfits/previews`    | Immutable generated outfit preview WebP files            |
-| `MUSE_BACKUP_ROOT`                            | `backups`                   | Reserved local backup location                           |
-| `MUSE_LOCK_ROOT`                              | `.locks`                    | Cross-process import-admission locks                     |
+| `MUSE_BACKUP_ROOT`                            | `backups`                   | Private validated local backup archives                  |
+| `MUSE_MAINTENANCE_ROOT`                       | `maintenance`               | Private restore/delete-all staging and markers           |
+| `MUSE_LOCK_ROOT`                              | `.locks`                    | Import and runtime-service leases                        |
+| `MUSE_MAX_BACKUP_ARCHIVE_BYTES`               | `2147483648`                | Archive and expanded-size ceiling                        |
+| `MUSE_MAX_BACKUP_ENTRY_COUNT`                 | `20000`                     | Maximum entries accepted in one backup                   |
+| `MUSE_MAX_BACKUP_COMPRESSION_RATIO`           | `200`                       | Per-entry decompression-ratio ceiling                    |
+| `MUSE_MAINTENANCE_CLEANUP_BATCH_SIZE`         | `100`                       | Maximum stale maintenance entries per cleanup            |
 | `MUSE_MAX_UPLOAD_SIZE_BYTES`                  | `26214400`                  | Maximum source image bytes (25 MiB)                      |
 | `MUSE_MAX_IMPORT_OVERHEAD_BYTES`              | `65536`                     | Multipart metadata and framing allowance                 |
 | `MUSE_UPLOAD_CHUNK_SIZE_BYTES`                | `262144`                    | Maximum parser work chunk                                |
@@ -163,6 +168,18 @@ when diagnosing retention or from a future scheduled service:
 .venv/bin/muse-backend cleanup-phone-upload-sessions
 ```
 
+After the UI stages a restore or delete-all operation, stop both listeners and
+apply it offline:
+
+```bash
+.venv/bin/muse-backend apply-staged-maintenance \
+  --confirm "APPLY STAGED MUSE MAINTENANCE"
+```
+
+Both servers hold a shared runtime lease. The command requests an exclusive
+lease and fails without changing live data if either server is still running.
+P7 service units will coordinate this sequence on the physical device.
+
 Format and verify source:
 
 ```bash
@@ -238,6 +255,20 @@ The API is versioned below `/api/v1`.
 | `PATCH /api/v1/outfits/{id}`                         | Replace/update an outfit and changed preview transactionally |
 | `DELETE /api/v1/outfits/{id}`                        | Soft-delete an outfit                                        |
 | `GET /api/v1/media/{relative_path}`                  | Read a validated local media path                            |
+| `GET /api/v1/settings`                               | Read typed application preferences and latest backup         |
+| `PATCH /api/v1/settings`                             | Partially update allowed preferences                         |
+| `GET /api/v1/settings/network-status`                | Read safe local-network and listener status                  |
+| `GET /api/v1/settings/storage-summary`               | Read bounded local storage counts and sizes                  |
+| `GET /api/v1/settings/device-status`                 | Read sanitized platform and runtime status                   |
+| `GET /api/v1/settings/capabilities`                  | Read capability-aware device action states                   |
+| `GET /api/v1/settings/maintenance-status`            | Read a safe staged-maintenance status                        |
+| `GET /api/v1/settings/backups`                       | List safe local backup summaries                             |
+| `POST /api/v1/settings/backups`                      | Create and validate one local backup                         |
+| `GET /api/v1/settings/backups/{id}/download`         | Stream a selected backup to the loopback browser             |
+| `DELETE /api/v1/settings/backups/{id}`               | Delete one selected local backup                             |
+| `POST /api/v1/settings/backups/{id}/stage-restore`   | Validate and stage a confirmed replace restore               |
+| `POST /api/v1/settings/data-deletion/stage`          | Stage a fully confirmed delete-all operation                 |
+| `POST /api/v1/settings/cleanup`                      | Run one bounded temporary cleanup pass                       |
 
 Collection responses use deterministic ordering plus bounded `limit` and
 non-negative `offset` query parameters. Expected failures use a stable JSON
@@ -250,6 +281,39 @@ committed garment. Metadata request bodies are limited by
 `MUSE_MAX_API_BODY_SIZE_BYTES`; import bodies instead use the image limit plus
 bounded multipart overhead. Public media is limited to approved image
 extensions beneath configured image/preview roots.
+
+## Settings, backups, and platform boundary
+
+`application_settings` remains a generic storage table internally, but the
+service exposes only five typed keys: device name, safe interface-dimming
+percentage, screen timeout, Reduced Motion, and Splash mode. Unknown keys,
+arbitrary JSON, command text, credentials, and paths are not part of the API.
+Settings mutations require JSON and an allowed browser origin in addition to
+the ordinary loopback, trusted-host, CORS, body-limit, and request-ID layers.
+
+The read-only platform adapter parses bounded, allow-listed operating-system,
+memory, uptime, thermal, architecture, and disk values without invoking a
+shell. Missing Linux or Raspberry Pi files produce an unavailable capability,
+not a simulated success. Privileged controls remain inactive until P7.
+
+Backup files use the suffix `.muse-backup.zip` and a closed
+`muse-backup-v1` manifest. Creation uses the SQLite online-backup API, removes
+phone-upload sessions from the snapshot, copies only registered media, streams
+SHA-256 checksums, validates the final archive, and promotes it atomically.
+Validation rejects unexpected and duplicate entries, path traversal, absolute
+paths, case collisions, symlinks, special files, excessive compression, excess
+entry count, oversized archives, incompatible migrations, corrupt SQLite,
+invalid foreign keys, and checksum mismatches. Archive structure and limits are
+validated again before offline activation.
+
+Restore and delete-all are staged while the application is running but are never
+activated against an open SQLite database. Staging creates a safety backup and a
+durable private marker. `apply-staged-maintenance` obtains the exclusive
+runtime lease, moves live data into rollback staging, installs the validated
+replacement or creates a freshly migrated empty database, and restores the
+previous paths if activation fails. Delete-all also removes local backups after
+the request explicitly acknowledges that loss; it never removes source code,
+frontend builds, the Python environment, or operating-system files.
 
 ## Phone-upload security boundary
 
