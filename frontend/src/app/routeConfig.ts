@@ -8,6 +8,11 @@ export const routePaths = {
   outfitBuilder: '/outfit-builder',
   savedOutfits: '/saved-outfits',
   settings: '/settings',
+  settingsNetwork: '/settings/network',
+  settingsDisplay: '/settings/display',
+  settingsData: '/settings/data',
+  settingsDevice: '/settings/device',
+  settingsAbout: '/settings/about',
 } as const;
 
 export const primaryRoutes = [

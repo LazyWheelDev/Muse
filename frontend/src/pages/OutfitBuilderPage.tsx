@@ -4,6 +4,7 @@ import {
   ArrowRight,
   ArrowUp,
   BringToFront,
+  Bookmark,
   ChevronLeft,
   ChevronRight,
   House,
@@ -468,6 +469,8 @@ export function OutfitBuilderPage() {
         ) + 1;
   const contextualWardrobe =
     state.originReturnTo?.startsWith(routePaths.wardrobe) === true ? state.originReturnTo : null;
+  const contextualSavedOutfits =
+    state.originReturnTo === routePaths.savedOutfits ? routePaths.savedOutfits : null;
 
   return (
     <div className={styles.page}>
@@ -697,10 +700,17 @@ export function OutfitBuilderPage() {
           ))}
         </section>
 
-        {contextualWardrobe === null ? (
+        {contextualWardrobe === null && contextualSavedOutfits === null ? (
           <span />
+        ) : contextualSavedOutfits !== null ? (
+          <NavigationButton className={styles.wardrobeReturn} to={contextualSavedOutfits}>
+            <Bookmark aria-hidden="true" /> Saved Outfits
+          </NavigationButton>
         ) : (
-          <NavigationButton className={styles.wardrobeReturn} to={contextualWardrobe}>
+          <NavigationButton
+            className={styles.wardrobeReturn}
+            to={contextualWardrobe ?? routePaths.wardrobe}
+          >
             <HangerIcon /> Wardrobe
           </NavigationButton>
         )}

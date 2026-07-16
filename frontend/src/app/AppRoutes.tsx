@@ -11,6 +11,13 @@ import { AddGarmentPage } from '../pages/AddGarmentPage';
 import { AddGarmentMethodPage } from '../pages/AddGarmentMethodPage';
 import { ClothingDetailsPage } from '../pages/ClothingDetailsPage';
 import { PhoneUploadPage } from '../pages/PhoneUploadPage';
+import {
+  LazyAboutMusePage,
+  LazyDataSettingsPage,
+  LazyDeviceSettingsPage,
+  LazyDisplaySettingsPage,
+  LazyNetworkSettingsPage,
+} from './LazySettingsPages';
 import { routePaths } from './routeConfig';
 
 export const museRoutes: RouteObject[] = [
@@ -27,6 +34,11 @@ export const museRoutes: RouteObject[] = [
       { path: routePaths.outfitBuilder, element: <OutfitBuilderPage /> },
       { path: routePaths.savedOutfits, element: <SavedOutfitsPage /> },
       { path: routePaths.settings, element: <SettingsPage /> },
+      { path: routePaths.settingsNetwork, element: <LazyNetworkSettingsPage /> },
+      { path: routePaths.settingsDisplay, element: <LazyDisplaySettingsPage /> },
+      { path: routePaths.settingsData, element: <LazyDataSettingsPage /> },
+      { path: routePaths.settingsDevice, element: <LazyDeviceSettingsPage /> },
+      { path: routePaths.settingsAbout, element: <LazyAboutMusePage /> },
       { path: '*', element: <NotFoundPage /> },
     ],
   },

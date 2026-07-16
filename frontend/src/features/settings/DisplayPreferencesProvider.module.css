@@ -1,0 +1,45 @@
+.dimmingOverlay {
+  position: fixed;
+  z-index: 90;
+  inset: 0;
+  background: #000;
+  opacity: var(--muse-interface-dim-opacity, 0);
+  pointer-events: none;
+  transition: opacity var(--motion-standard) var(--motion-ease-out);
+}
+
+.sleepOverlay {
+  position: fixed;
+  z-index: 200;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  padding: var(--space-4);
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: var(--space-3);
+  color: #d9d2c8;
+  background: #090909;
+  border: 0;
+  font-family: var(--font-family-interface);
+  font-size: var(--font-size-lg);
+  cursor: pointer;
+}
+
+.sleepMark {
+  color: var(--color-champagne);
+  font-family: var(--font-family-display);
+  font-size: 5rem;
+  line-height: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dimmingOverlay {
+    transition: none;
+  }
+}
+
+:global(:root[data-muse-reduced-motion='true']) .dimmingOverlay {
+  transition: none;
+}

@@ -1,0 +1,314 @@
+.startup {
+  position: fixed;
+  z-index: 300;
+  inset: 0;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  color: var(--color-text-primary);
+  background: var(--color-background);
+}
+
+.backgroundMonogram {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  color: var(--color-surface-muted);
+  font-family: var(--font-family-display);
+  font-size: clamp(32rem, 78vw, 64rem);
+  line-height: 0.75;
+  opacity: 0.62;
+  transform: translate(-50%, -50%);
+  user-select: none;
+}
+
+.composition {
+  position: relative;
+  min-inline-size: min(90vw, 42rem);
+  display: grid;
+  justify-items: center;
+  text-align: center;
+  transform-origin: center;
+}
+
+.wordmark {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  font-family: var(--font-family-display);
+  font-size: clamp(5rem, 10vw, 8.25rem);
+  line-height: 1;
+}
+
+.letterM {
+  position: relative;
+  color: var(--color-border);
+}
+
+.letterM::before {
+  content: 'M';
+  position: absolute;
+  inset: 0;
+  color: var(--color-champagne-dark);
+  clip-path: inset(0);
+}
+
+.letterU,
+.letterS,
+.letterE {
+  color: var(--color-text-primary);
+}
+
+.divider {
+  inline-size: min(80%, 28rem);
+  margin-block-start: var(--space-2);
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.divider span {
+  block-size: 1px;
+  background: var(--color-champagne-dark);
+  opacity: 0.66;
+}
+
+.divider i {
+  inline-size: 0.65rem;
+  block-size: 0.65rem;
+  background: var(--color-champagne);
+  transform: rotate(45deg);
+}
+
+.tagline {
+  margin: var(--space-2) 0 0;
+  color: var(--color-text-secondary);
+  font-size: clamp(1.25rem, 2.8vw, 2rem);
+}
+
+.waitingCopy {
+  min-block-size: 1.5rem;
+  margin: var(--space-3) 0 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.dropletAssembly {
+  position: absolute;
+  inset-block-end: calc(100% + var(--space-2));
+  inset-inline-start: 50%;
+  inline-size: 1rem;
+  block-size: 16rem;
+  visibility: hidden;
+  opacity: 0;
+  transform: translateX(-50%);
+}
+
+.trail {
+  position: absolute;
+  inset: 0.5rem auto auto 50%;
+  inline-size: 0.125rem;
+  block-size: 12rem;
+  background: linear-gradient(transparent, var(--color-champagne));
+  transform: translateX(-50%);
+}
+
+.droplet {
+  position: absolute;
+  inset-block-end: 0;
+  inline-size: 1rem;
+  block-size: 1.25rem;
+  background: var(--color-champagne);
+  border-radius: 55% 55% 65% 65% / 45% 45% 70% 70%;
+  transform: rotate(45deg);
+}
+
+.full.intro .dropletAssembly {
+  visibility: visible;
+  animation: droplet-fall 650ms cubic-bezier(0.3, 0, 0.4, 1) both;
+}
+
+.full.intro .letterM::before {
+  animation: fill-m 520ms 610ms ease-out both;
+}
+
+.full.intro .letterU,
+.full.intro .letterS,
+.full.intro .letterE {
+  display: inline-block;
+  overflow: hidden;
+  max-inline-size: 0;
+  opacity: 0;
+  transform: translateX(70vw);
+  white-space: nowrap;
+}
+
+.full.intro .letterU {
+  animation: letter-arrive 340ms 1.08s var(--motion-ease-out) both;
+}
+
+.full.intro .letterS {
+  animation: letter-arrive 340ms 1.4s var(--motion-ease-out) both;
+}
+
+.full.intro .letterE {
+  animation: letter-arrive 340ms 1.72s var(--motion-ease-out) both;
+}
+
+.full.intro .divider,
+.full.intro .tagline {
+  opacity: 0;
+  clip-path: inset(0 50%);
+  animation: reveal-tagline 420ms 2.02s var(--motion-ease-out) both;
+}
+
+.reduced .dropletAssembly {
+  display: none;
+}
+
+.reduced.intro .composition {
+  opacity: 0;
+  animation: simple-reveal 300ms var(--motion-ease-out) both;
+}
+
+.leaving .composition {
+  animation: compress-away 420ms var(--motion-ease-out) both;
+}
+
+.black {
+  background: #050505;
+}
+
+.black .backgroundMonogram,
+.black .composition {
+  visibility: hidden;
+}
+
+.recoveryPanel {
+  position: relative;
+  inline-size: min(calc(100% - (2 * var(--space-4))), 40rem);
+  padding: var(--space-6);
+  display: grid;
+  justify-items: center;
+  gap: var(--space-2);
+  background: rgb(255 249 241 / 94%);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-large);
+  box-shadow: var(--shadow-large);
+  text-align: center;
+}
+
+.recoveryMark {
+  color: var(--color-champagne-dark);
+  font-family: var(--font-family-display);
+  font-size: 4rem;
+  line-height: 1;
+}
+
+.recoveryPanel h1,
+.recoveryPanel p {
+  margin: 0;
+}
+
+.recoveryPanel h1 {
+  font-family: var(--font-family-display);
+  font-size: var(--font-size-3xl);
+  font-weight: var(--font-weight-medium);
+}
+
+.recoveryPanel p {
+  margin-block-end: var(--space-2);
+  color: var(--color-text-secondary);
+}
+
+.applicationReveal {
+  min-block-size: 100dvh;
+  animation: home-reveal var(--motion-slow) var(--motion-ease-out) both;
+}
+
+.accessibleStatus {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@keyframes droplet-fall {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -45vh);
+  }
+  15% {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, 15.5rem);
+  }
+}
+
+@keyframes fill-m {
+  from {
+    clip-path: inset(100% 0 0);
+  }
+  to {
+    clip-path: inset(0);
+  }
+}
+
+@keyframes letter-arrive {
+  to {
+    max-inline-size: 1em;
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes reveal-tagline {
+  to {
+    opacity: 1;
+    clip-path: inset(0);
+  }
+}
+
+@keyframes simple-reveal {
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes compress-away {
+  70% {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.02);
+  }
+}
+
+@keyframes home-reveal {
+  from {
+    opacity: 0;
+    clip-path: inset(50% 0);
+  }
+  to {
+    opacity: 1;
+    clip-path: inset(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .startup *,
+  .applicationReveal {
+    animation: none !important;
+  }
+}
+
+:global(:root[data-muse-reduced-motion='true']) .startup *,
+:global(:root[data-muse-reduced-motion='true']) .applicationReveal {
+  animation: none !important;
+}

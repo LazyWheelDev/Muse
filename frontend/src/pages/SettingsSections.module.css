@@ -1,0 +1,273 @@
+.capabilityCard {
+  min-block-size: var(--touch-target-min);
+  padding: var(--space-2);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-2);
+  background: var(--color-background-soft);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-medium);
+}
+
+.capabilityCard > svg {
+  inline-size: 2rem;
+  block-size: 2rem;
+  color: var(--color-champagne-dark);
+}
+
+.capabilityCard p {
+  margin: 0.25rem 0 0;
+  color: var(--color-text-secondary);
+}
+
+.rangeField,
+.selectRow {
+  min-block-size: var(--touch-target-min);
+  display: grid;
+  gap: var(--space-2);
+}
+
+.fieldHeading,
+.selectRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.rangeField output {
+  color: var(--color-champagne-dark);
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+}
+
+.rangeField input {
+  inline-size: 100%;
+  block-size: var(--touch-target-min);
+  accent-color: var(--color-champagne-dark);
+  cursor: pointer;
+}
+
+.selectRow > label {
+  display: grid;
+  font-weight: var(--font-weight-semibold);
+}
+
+.selectRow small {
+  color: var(--color-text-secondary);
+}
+
+.selectRow select,
+.confirmationInput {
+  min-block-size: var(--touch-target-min);
+  min-inline-size: 12rem;
+  padding-inline: var(--space-2);
+  color: var(--color-text-primary);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+}
+
+.summaryGrid,
+.deviceGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.summaryCard {
+  min-block-size: 7rem;
+  padding: var(--space-2);
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 0.25rem;
+  color: var(--color-text-secondary);
+  background: var(--color-background-soft);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-medium);
+  text-align: center;
+}
+
+.summaryCard strong {
+  color: var(--color-text-primary);
+  font-family: var(--font-family-display);
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-medium);
+}
+
+.actionRow,
+.backupActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.deviceNameForm {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.deviceNameForm > label {
+  font-weight: var(--font-weight-semibold);
+}
+
+.deviceNameForm > div {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.textInput {
+  min-block-size: var(--touch-target-min);
+  min-inline-size: 0;
+  inline-size: min(100%, 28rem);
+  padding-inline: var(--space-2);
+  color: var(--color-text-primary);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+}
+
+.textInput[aria-invalid='true'] {
+  border-color: var(--color-danger);
+}
+
+.fieldError {
+  margin: 0;
+  color: var(--color-danger);
+}
+
+.downloadButton {
+  min-block-size: var(--touch-target-min);
+  min-inline-size: var(--touch-target-min);
+  padding-inline: var(--space-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  color: var(--color-text-primary);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-small);
+  font-weight: var(--font-weight-medium);
+  text-decoration: none;
+}
+
+.backupList {
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+  list-style: none;
+}
+
+.backupItem {
+  padding: var(--space-2);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+  background: var(--color-background-soft);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-medium);
+}
+
+.backupItem p {
+  margin: 0.25rem 0 0;
+  color: var(--color-text-secondary);
+}
+
+.confirmationForm {
+  margin-block-start: var(--space-3);
+  display: grid;
+  gap: var(--space-2);
+}
+
+.confirmationForm label {
+  display: grid;
+  gap: var(--space-1);
+  font-weight: var(--font-weight-medium);
+}
+
+.checkRow {
+  min-block-size: var(--touch-target-min);
+  display: flex !important;
+  grid-template-columns: none;
+  align-items: center;
+  gap: var(--space-2) !important;
+}
+
+.checkRow input {
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+  accent-color: var(--color-danger);
+}
+
+.aboutLockup {
+  padding-block: var(--space-3);
+  display: grid;
+  justify-items: center;
+  text-align: center;
+}
+
+.aboutLockup h2,
+.aboutLockup p {
+  margin: 0;
+}
+
+.aboutLockup h2 {
+  color: var(--color-text-primary);
+  font-family: var(--font-family-display);
+  font-size: 4rem;
+  font-weight: var(--font-weight-medium);
+}
+
+.aboutLockup h2::first-letter {
+  color: var(--color-champagne-dark);
+}
+
+.aboutLockup p {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-lg);
+}
+
+.aboutCopy {
+  max-inline-size: 52rem;
+  margin-inline: auto;
+  color: var(--color-text-secondary);
+}
+
+@media (max-width: 48rem) {
+  .summaryGrid,
+  .deviceGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .backupItem {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 32rem) {
+  .summaryGrid,
+  .deviceGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .selectRow {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .selectRow select {
+    inline-size: 100%;
+  }
+
+  .deviceNameForm > div {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

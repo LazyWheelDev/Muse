@@ -22,6 +22,7 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       sourcemap: false,
+      manifest: true,
     },
     test: {
       environment: 'jsdom',

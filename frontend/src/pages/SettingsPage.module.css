@@ -1,0 +1,168 @@
+.page {
+  block-size: calc(100dvh - (2 * var(--space-4)));
+  min-block-size: 43rem;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) 6.5rem;
+  gap: var(--space-2);
+}
+
+.settingsGrid {
+  inline-size: min(100%, 62rem);
+  min-block-size: 0;
+  margin-inline: auto;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(9rem, 1fr));
+  gap: var(--space-3);
+}
+
+.settingsCard {
+  min-inline-size: 0;
+  min-block-size: var(--touch-target-min);
+  padding: var(--space-2);
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: var(--space-2);
+  color: var(--color-text-primary);
+  background: rgb(255 249 241 / 91%);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-large);
+  box-shadow: var(--shadow-medium);
+  font-family: var(--font-family-display);
+  font-size: clamp(1.5rem, 2.6vw, 2rem);
+  text-align: center;
+  text-decoration: none;
+  transition:
+    border-color var(--motion-fast) var(--motion-ease-out),
+    box-shadow var(--motion-fast) var(--motion-ease-out),
+    transform var(--motion-fast) var(--motion-ease-out);
+}
+
+.wide {
+  grid-column: span 3;
+}
+
+.narrow {
+  grid-column: span 2;
+}
+
+.settingsCard:active {
+  border-color: var(--color-champagne-dark);
+  box-shadow: none;
+  transform: scale(0.985);
+}
+
+.iconCircle {
+  inline-size: 5.75rem;
+  block-size: 5.75rem;
+  display: grid;
+  place-items: center;
+  color: var(--color-champagne-dark);
+  background: var(--color-surface-muted);
+  border-radius: 50%;
+}
+
+.iconCircle svg {
+  inline-size: 3rem;
+  block-size: 3rem;
+  stroke-width: 1.5;
+}
+
+.powerButton {
+  inline-size: 6rem;
+  block-size: 6rem;
+  align-self: center;
+  justify-self: center;
+  display: grid;
+  place-items: center;
+  color: var(--color-champagne-dark);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  box-shadow: var(--shadow-medium);
+  cursor: pointer;
+  transition:
+    border-color var(--motion-fast) var(--motion-ease-out),
+    box-shadow var(--motion-fast) var(--motion-ease-out),
+    transform var(--motion-fast) var(--motion-ease-out);
+}
+
+.powerButton svg {
+  inline-size: 3.25rem;
+  block-size: 3.25rem;
+  stroke-width: 1.5;
+}
+
+.powerButton:active {
+  border-color: var(--color-champagne-dark);
+  box-shadow: none;
+  transform: scale(0.96);
+}
+
+.powerActions {
+  margin-block-start: var(--space-3);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.capabilityNotice {
+  margin-block-start: var(--space-2) !important;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+@media (max-height: 45rem) and (min-width: 50rem) {
+  .settingsGrid {
+    grid-template-rows: repeat(2, minmax(7rem, 1fr));
+  }
+
+  .settingsCard {
+    gap: var(--space-1);
+  }
+
+  .iconCircle {
+    inline-size: 4.25rem;
+    block-size: 4.25rem;
+  }
+
+  .iconCircle svg {
+    inline-size: 2.25rem;
+    block-size: 2.25rem;
+  }
+}
+
+@media (max-width: 48rem) {
+  .page {
+    block-size: auto;
+  }
+}
+
+@media (max-width: 36rem) {
+  .settingsGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: none;
+  }
+
+  .wide,
+  .narrow {
+    grid-column: span 1;
+  }
+
+  .settingsCard:last-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settingsCard,
+  .powerButton {
+    transition: none;
+  }
+}
+
+:global(:root[data-muse-reduced-motion='true']) .settingsCard,
+:global(:root[data-muse-reduced-motion='true']) .powerButton {
+  transition: none;
+}
