@@ -20,6 +20,7 @@ def settings(tmp_path: Path) -> Settings:
         frontend_build_path=tmp_path / "frontend-dist",
         allowed_origins=[],
         trusted_hosts=["testserver"],
+        phone_upload_enabled=False,
     )
 
 

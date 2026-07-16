@@ -75,7 +75,7 @@ function requestBody(init: RequestInit | undefined): Record<string, unknown> {
     : {};
 }
 
-function installSettingsApi() {
+function installSettingsApi(capabilityPayload = capabilities) {
   const requests: Array<{ path: string; init: RequestInit | undefined }> = [];
   const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const path = requestPath(input);
@@ -97,7 +97,12 @@ function installSettingsApi() {
       );
     }
     if (path === '/api/v1/settings/capabilities')
-      return Promise.resolve(jsonResponse(capabilities));
+      return Promise.resolve(jsonResponse(capabilityPayload));
+    if (path.startsWith('/api/v1/settings/device-actions/')) {
+      return Promise.resolve(
+        jsonResponse({ action: path.split('/').at(-1), status: 'scheduled' }, 202),
+      );
+    }
     if (path === '/api/v1/settings/device-status')
       return Promise.resolve(jsonResponse(deviceStatus));
     if (path === '/api/v1/settings/storage-summary')
@@ -168,6 +173,31 @@ describe('Settings product experience', () => {
 
     await user.click(within(dialog).getByRole('button', { name: 'Sleep Display' }));
     expect(screen.getByRole('button', { name: 'Wake Muse display' })).toBeVisible();
+  });
+
+  it('requires confirmation and sends only the fixed deployed restart action', async () => {
+    const { requests } = installSettingsApi({
+      ...capabilities,
+      restart_application: { available: true, state: 'available', reason: 'Provisioned.' },
+    });
+    const user = userEvent.setup();
+
+    renderApp('/settings');
+    await user.click(screen.getByRole('button', { name: 'Open power options' }));
+    const powerDialog = screen.getByRole('dialog', { name: 'Power options' });
+    const restart = within(powerDialog).getByRole('button', { name: 'Restart Muse' });
+    expect(restart).toBeEnabled();
+    await user.click(restart);
+
+    const confirmation = screen.getByRole('dialog', { name: 'Restart Muse' });
+    await user.click(within(confirmation).getByRole('button', { name: 'Restart Muse' }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Restart Muse scheduled.');
+    const request = requests.find(
+      ({ path }) => path === '/api/v1/settings/device-actions/restart_application',
+    );
+    expect(request?.init?.method).toBe('POST');
+    expect(requestBody(request?.init)).toEqual({ confirmation: 'RESTART MUSE' });
   });
 
   it('validates and persists the bounded friendly device name without claiming a hostname change', async () => {

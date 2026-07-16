@@ -54,6 +54,19 @@ jobs:
       - name: Install Python
         run: uv python install 3.13
 
+      - name: Install deployment static checker
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes shellcheck shfmt
+
+      - name: Verify deployment scripts and systemd units
+        env:
+          PYTHON_BIN: ${{ runner.temp }}/deployment-python
+        run: |
+          uv python find 3.13 > "${RUNNER_TEMP}/python-path"
+          ln -s "$(cat "${RUNNER_TEMP}/python-path")" "$PYTHON_BIN"
+          ./kiosk/verify-deployment.sh --require-systemd
+
       - name: Verify backend lock file
         working-directory: backend
         run: uv lock --check

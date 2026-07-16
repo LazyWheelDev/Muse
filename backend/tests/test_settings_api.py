@@ -8,6 +8,7 @@ from sqlalchemy import select
 from muse_backend.config import Settings
 from muse_backend.database.models.setting import ApplicationSetting
 from muse_backend.domain.enums import PhoneUploadListenerStatus
+from muse_backend.services.device_control import DeviceControlCapability, DeviceControlService
 from muse_backend.services.phone_upload_listener import PhoneUploadListenerProbe
 from tests.support import running_client
 
@@ -159,7 +160,7 @@ async def test_device_network_capability_and_storage_contracts_are_safe_and_hone
         assert capabilities.json()[action] == {
             "available": False,
             "state": "requires_deployment_configuration",
-            "reason": "Available after the Raspberry Pi deployment milestone.",
+            "reason": "Requires validated Raspberry Pi deployment configuration.",
         }
     assert device.json()["main_readiness"] == "ready"
     assert device.json()["internet_status"] == "not_checked"
@@ -167,6 +168,69 @@ async def test_device_network_capability_and_storage_contracts_are_safe_and_hone
     assert "data_root" not in device.text
     assert "database_path" not in device.text
     assert "/Users/" not in device.text
+
+
+async def test_device_actions_are_fixed_confirmed_and_enabled_only_by_validated_helper(
+    client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scheduled: list[str] = []
+    monkeypatch.setattr(
+        DeviceControlService,
+        "capability",
+        lambda _self: DeviceControlCapability(True, "available", None),
+    )
+    monkeypatch.setattr(
+        DeviceControlService,
+        "schedule",
+        lambda _self, action: scheduled.append(action.value),
+    )
+
+    capabilities = await client.get("/api/v1/settings/capabilities")
+    mismatch = await client.post(
+        "/api/v1/settings/device-actions/restart_application",
+        json={"confirmation": "RESTART DEVICE"},
+    )
+    invalid = await client.post(
+        "/api/v1/settings/device-actions/arbitrary-command",
+        json={"confirmation": "RESTART MUSE"},
+    )
+    accepted = await client.post(
+        "/api/v1/settings/device-actions/restart_application",
+        json={"confirmation": "RESTART MUSE"},
+    )
+
+    assert capabilities.json()["restart_application"] == {
+        "available": True,
+        "state": "available",
+        "reason": None,
+    }
+    assert mismatch.status_code == 422
+    assert invalid.status_code == 422
+    assert accepted.status_code == 202
+    assert accepted.json() == {"action": "restart_application", "status": "scheduled"}
+    assert scheduled == ["restart_application"]
+
+
+async def test_pending_device_action_rejects_new_mutations_but_keeps_reads_available(
+    client: httpx.AsyncClient,
+    migrated_settings: Settings,
+) -> None:
+    migrated_settings.device_action_marker_path.write_text(
+        '{"action":"restart_application"}',
+        encoding="utf-8",
+    )
+
+    read = await client.get("/api/v1/settings")
+    blocked = await client.patch(
+        "/api/v1/settings",
+        json={"reduced_motion": True},
+    )
+
+    assert read.status_code == 200
+    assert blocked.status_code == 503
+    assert blocked.json()["error"]["code"] == "device_action_pending"
+    assert blocked.headers["cache-control"] == "no-store"
 
 
 async def test_cleanup_is_typed_bounded_and_preserves_pending_staging(
