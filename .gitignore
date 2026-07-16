@@ -34,6 +34,7 @@ playwright-report/
 test-results/
 blob-report/
 **/output/playwright/
+**/output/visual-*/
 
 # Local databases and journals
 *.db
@@ -57,7 +58,11 @@ blob-report/
 /thumbnails/
 /previews/
 /backups/
+/maintenance/
 /generated/
+*.muse-backup.zip
+*.pid
+*.log
 
 # Environment files (examples stay tracked)
 .env

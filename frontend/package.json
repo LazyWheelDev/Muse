@@ -31,7 +31,8 @@
     "test:e2e:reuse-build": "playwright test",
     "test:e2e:production": "playwright test e2e/production-integration.spec.ts e2e/production-outfit-integration.spec.ts --workers=1",
     "test:e2e:production:p4": "playwright test e2e/production-phone-upload-integration.spec.ts --workers=1",
-    "test:e2e:production:p5": "playwright test e2e/production-outfit-integration.spec.ts --workers=1"
+    "test:e2e:production:p5": "playwright test e2e/production-outfit-integration.spec.ts --workers=1",
+    "test:e2e:production:p6": "playwright test e2e/production-settings-integration.spec.ts --workers=1"
   },
   "dependencies": {
     "@fontsource-variable/inter": "5.2.8",

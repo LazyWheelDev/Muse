@@ -36,7 +36,7 @@ jobs:
               fi
             fi
             case "/${path}" in
-              */.coverage*|*.db|*.db-journal|*.db-shm|*.db-wal|*.sqlite|*.sqlite-journal|*.sqlite-shm|*.sqlite-wal|*.sqlite3|*.sqlite3-journal|*.sqlite3-shm|*.sqlite3-wal|*/node_modules/*|*/.venv/*|*/venv/*|*/__pycache__/*|*/.pytest_cache/*|*/.mypy_cache/*|*/.ruff_cache/*|*/local-data/*|*/test-results/*|*/playwright-report/*|*/dist/*|*/dist-phone/*)
+              */.coverage*|*.db|*.db-journal|*.db-shm|*.db-wal|*.sqlite|*.sqlite-journal|*.sqlite-shm|*.sqlite-wal|*.sqlite3|*.sqlite3-journal|*.sqlite3-shm|*.sqlite3-wal|*.muse-backup.zip|*.pid|*.log|*/maintenance/*|*/node_modules/*|*/.venv/*|*/venv/*|*/__pycache__/*|*/.pytest_cache/*|*/.mypy_cache/*|*/.ruff_cache/*|*/local-data/*|*/test-results/*|*/playwright-report/*|*/dist/*|*/dist-phone/*)
                 printf 'Tracked generated artifact: %s\n' "$path"
                 found=1
                 ;;
@@ -141,6 +141,7 @@ jobs:
           npx prettier --check
           ../README.md
           ../CONTRIBUTING.md
+          README.md
           "../docs/**/*.md"
           ../backend/README.md
           ../.github/workflows/ci.yml
@@ -341,13 +342,119 @@ jobs:
 
       - name: Stop phone-upload production smoke servers
         if: always()
+        shell: bash
         run: |
-          if [ -f "${RUNNER_TEMP}/muse-phone-upload.pid" ]; then
-            kill "$(cat "${RUNNER_TEMP}/muse-phone-upload.pid")" 2>/dev/null || true
+          for pid_file in \
+            "${RUNNER_TEMP}/muse-phone-upload.pid" \
+            "${RUNNER_TEMP}/muse-phone-main.pid"; do
+            if [ ! -f "$pid_file" ]; then
+              continue
+            fi
+            pid="$(cat "$pid_file")"
+            if ! [[ "$pid" =~ ^[0-9]+$ ]] || [ "$pid" -le 1 ]; then
+              printf 'Refusing an invalid phone-upload PID file: %s\n' "$pid_file"
+              exit 1
+            fi
+            command_line="$(ps -p "$pid" -o command= 2>/dev/null || true)"
+            if [ -z "$command_line" ]; then
+              continue
+            fi
+            case "$command_line" in
+              *"${RUNNER_TEMP}/muse-production-venv/bin/muse-backend"*)
+                kill "$pid"
+                ;;
+              *)
+                printf 'Refusing to signal a process not owned by the phone harness: %s\n' "$pid"
+                exit 1
+                ;;
+            esac
+            for attempt in {1..50}; do
+              if ! kill -0 "$pid" 2>/dev/null; then
+                break
+              fi
+              sleep 0.1
+            done
+            if kill -0 "$pid" 2>/dev/null; then
+              printf 'Phone-upload test process %s did not stop in time\n' "$pid"
+              exit 1
+            fi
+          done
+
+      - name: Test production startup, Settings, restore, and delete-all
+        working-directory: frontend
+        env:
+          PLAYWRIGHT_BASE_URL: http://127.0.0.1:8000
+          PLAYWRIGHT_PHONE_UPLOAD_BASE_URL: http://127.0.0.1:8787
+          MUSE_BACKEND_EXECUTABLE: ${{ runner.temp }}/muse-production-venv/bin/muse-backend
+          MUSE_P6_E2E_RUNTIME_ROOT: ${{ runner.temp }}/muse-p6-runtime
+          MUSE_P6_E2E_DATA_ROOT: ${{ runner.temp }}/muse-p6-e2e
+        shell: bash
+        run: |
+          install -d -m 700 "$MUSE_P6_E2E_RUNTIME_ROOT" "$MUSE_P6_E2E_DATA_ROOT"
+          if ! npm run test:e2e:production:p6; then
+            touch "${RUNNER_TEMP}/muse-p6-e2e-failed"
+            exit 1
           fi
-          if [ -f "${RUNNER_TEMP}/muse-phone-main.pid" ]; then
-            kill "$(cat "${RUNNER_TEMP}/muse-phone-main.pid")" 2>/dev/null || true
+
+      - name: Verify final P6 database and maintenance state
+        working-directory: backend
+        shell: bash
+        run: |
+          data_root="$({
+            find "${RUNNER_TEMP}/muse-p6-e2e" -mindepth 1 -maxdepth 1 \
+              -type d -name 'playwright-attempt-*' -print 2>/dev/null || true
+          } | sort -V | tail -n 1)"
+          if [ -z "$data_root" ]; then
+            printf 'No isolated P6 data root was available for integrity verification\n'
+            exit 1
           fi
+          MUSE_DATA_ROOT="$data_root" \
+            "${RUNNER_TEMP}/muse-production-venv/bin/muse-backend" migration-status
+          MUSE_DATA_ROOT="$data_root" \
+            "${RUNNER_TEMP}/muse-production-venv/bin/python" - <<'PY'
+          import sqlite3
+
+          from muse_backend.config import Settings
+
+          settings = Settings()
+          with sqlite3.connect(settings.database_path) as connection:
+              assert connection.execute("PRAGMA quick_check").fetchall() == [("ok",)]
+              assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+              assert connection.execute("SELECT COUNT(*) FROM clothing_items").fetchone() == (0,)
+              assert connection.execute("SELECT COUNT(*) FROM outfits").fetchone() == (0,)
+              assert connection.execute("SELECT COUNT(*) FROM clothing_images").fetchone() == (0,)
+          assert not list(settings.backup_root.glob("*.muse-backup.zip"))
+          PY
+
+      - name: Stop P6 production test services
+        if: always()
+        shell: bash
+        run: |
+          shopt -s nullglob
+          for pid_file in "${RUNNER_TEMP}"/muse-p6-runtime/playwright-attempt-*/*.pid; do
+            if [ -L "$pid_file" ] || [ ! -f "$pid_file" ]; then
+              printf 'Refusing an unsafe P6 PID path: %s\n' "$pid_file"
+              exit 1
+            fi
+            pid="$(cat "$pid_file")"
+            if ! [[ "$pid" =~ ^[0-9]+$ ]] || [ "$pid" -le 1 ]; then
+              printf 'Refusing an invalid P6 PID file: %s\n' "$pid_file"
+              exit 1
+            fi
+            command_line="$(ps -p "$pid" -o command= 2>/dev/null || true)"
+            if [ -z "$command_line" ]; then
+              continue
+            fi
+            case "$command_line" in
+              *"${RUNNER_TEMP}/muse-production-venv/bin/muse-backend"*)
+                kill "$pid" 2>/dev/null || true
+                ;;
+              *)
+                printf 'Refusing to signal a process not owned by the P6 harness: %s\n' "$pid"
+                exit 1
+                ;;
+            esac
+          done
 
       - name: Scrub phone-upload secrets from failure diagnostics
         id: scrub_phone_diagnostics
@@ -369,7 +476,8 @@ jobs:
             frontend/test-results/playwright \
             "${RUNNER_TEMP}/muse-backend.log" \
             "${RUNNER_TEMP}/muse-phone-main.log" \
-            "${RUNNER_TEMP}/muse-phone-upload.log"; do
+            "${RUNNER_TEMP}/muse-phone-upload.log" \
+            "${RUNNER_TEMP}/muse-p6-runtime"; do
             if [ -e "$candidate" ]; then
               diagnostic_paths+=("$candidate")
             fi
@@ -398,5 +506,7 @@ jobs:
             ${{ runner.temp }}/muse-backend.log
             ${{ runner.temp }}/muse-phone-main.log
             ${{ runner.temp }}/muse-phone-upload.log
+            ${{ runner.temp }}/muse-p6-runtime/**/main.log
+            ${{ runner.temp }}/muse-p6-runtime/**/phone.log
           if-no-files-found: ignore
           retention-days: 7
