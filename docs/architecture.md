@@ -256,11 +256,13 @@ and apply an additional same-origin check. Responses expose neither raw paths,
 environment variables, Wi-Fi credentials, command output, nor phone-upload
 secrets.
 
-The platform adapter uses bounded standard-library reads for operating-system,
-architecture, memory, uptime, disk, and optional thermal information. It never
-invokes a shell. Wi-Fi management, hardware brightness, application restart,
-device reboot, and shutdown remain unavailable until P7 installs and validates
-narrow privileged adapters. Display sleep and interface dimming remain
+The read-only platform adapter uses bounded standard-library reads for
+operating-system, architecture, memory, uptime, disk, and optional thermal
+information. Wi-Fi management and hardware brightness remain unavailable. P7
+adds a separate device-control adapter for application restart, reboot, and
+shutdown. It reports available only after a fixed root-owned helper and exact
+sudo authorization pass validation; it never accepts caller-selected commands,
+arguments, paths, or service names. Display sleep and interface dimming remain
 application-level capabilities.
 
 Muse backups use a versioned local ZIP contract. Creation starts from the
@@ -285,8 +287,9 @@ and directory structure, and removes local backups only after the explicit
 backup-loss acknowledgement.
 
 Both Uvicorn processes hold shared leases for their complete lifetimes. P7
-systemd units will coordinate stop, offline maintenance activation, migration,
-and restart; P6 does not install those units or execute privileged commands.
+systemd units coordinate stop, offline maintenance activation, migration,
+reconciliation, and restart. The web process remains unprivileged; only the
+fixed device helper crosses the root boundary.
 
 ## Persistence model
 
@@ -399,10 +402,11 @@ Alembic is the only production schema migration mechanism. Direct
 `metadata.create_all()` startup behavior is intentionally avoided. Migrations
 are written explicitly for SQLite, are forward- and reverse-testable, and CI
 checks that model metadata matches the committed migration head. SQLite DDL is
-not treated as a cross-file transaction with media, so operators must stop the
-service and use the future backup procedure before production upgrades. The
-reserved backup directory is not yet an automated pre-migration backup system;
-that recovery workflow belongs in the kiosk deployment milestone.
+not treated as a cross-file transaction with media, so P7 stops both listeners
+and creates a verified Muse safety backup before changing the active release.
+Code rollback is allowed only when the previous release reports the current
+database revision compatible; the deployment system never downgrades SQLite
+automatically.
 
 ## Local storage policy
 
@@ -484,13 +488,14 @@ CPython 3.13 Linux ARM64 wheels with the required common image codecs. The Pi
 does not need Node.js, Redis, PostgreSQL, a task queue, a downloaded ML model, or
 a network connection for core wardrobe use.
 
-The main service binds to loopback and the upload service binds to one configured
-LAN interface. Each runs one Uvicorn worker. The deployment milestone will add
-and validate coordinated systemd units; migrations must complete before either
-process starts, and stopping or restarting the main service must coordinate with
-the upload listener. Images are kept out of SQLite to limit database growth and
-memory pressure. Outfit collection queries aggregate placement counts in
-SQLite and reserve full garment/image hydration for detail reads.
+The main service binds to loopback and the upload service binds to one generated
+private-LAN address. Each runs one Uvicorn worker. P7 installs coordinated
+systemd preparation, main, phone, network-refresh, and templated kiosk units.
+Migrations and startup reconciliation complete before listeners start, and
+application lifecycle operations coordinate both listener processes. Images
+are kept out of SQLite to limit database growth and memory pressure. Outfit
+collection queries aggregate placement counts in SQLite and reserve full
+garment/image hydration for detail reads.
 
 An optional advertised hostname is configured separately. If it is itself an
 IPv4 literal, it must equal the listener's exact private bind address, just as

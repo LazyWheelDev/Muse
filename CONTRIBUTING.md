@@ -261,10 +261,22 @@ and the restricted-listener phone workflow.
 - A staged restore or delete-all response means restart is required. It must not
   be described as applied. Run `apply-staged-maintenance` only after both Muse
   listeners are stopped; the runtime lease refuses online activation.
-- Platform adapters are read-only and bounded during P6. Restart, reboot,
-  shutdown, Wi-Fi management, hardware brightness, systemd, and kiosk activation
-  remain unavailable until P7. Do not add `shell=True`, caller-selected argv,
-  broad sudo rules, or a root web process.
+- Restart, reboot, and shutdown are P7 capabilities only through the fixed
+  root-owned helper and exact sudoers allowlist. Wi-Fi management and hardware
+  brightness remain unavailable. Do not add `shell=True`, caller-selected argv,
+  service names, executable paths, broad sudo rules, or a root web process.
+
+Deployment changes must also run the P7 static checks:
+
+```bash
+find kiosk -type f -exec awk 'FNR == 1 && /bash/ {print FILENAME}' {} \; | xargs shellcheck
+UV_PROJECT_ENVIRONMENT=venv uv run pytest tests/test_kiosk_deployment.py --no-cov
+./kiosk/build-release.sh --allow-dirty
+git diff --check
+```
+
+Release archives are generated and gitignored. Never commit one or execute
+`deploy.sh` against a physical device as part of repository verification.
 
 ### Schema changes
 

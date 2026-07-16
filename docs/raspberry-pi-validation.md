@@ -4,6 +4,11 @@ This procedure validates Muse on the target Raspberry Pi 5 hardware. Results
 from a development laptop are useful for regression tracking, but they are not
 substitutes for this hardware run.
 
+Complete the non-destructive discovery and deployment checkpoints in
+[raspberry-pi-operator-runbook.md](raspberry-pi-operator-runbook.md) first. The
+short [hackathon MVP acceptance checklist](hackathon-acceptance.md) is the demo
+gate; this document remains the exhaustive later validation procedure.
+
 ## Target environment
 
 - Raspberry Pi 5 with 8 GB RAM
@@ -13,8 +18,8 @@ substitutes for this hardware run.
 - system Chromium in kiosk mode
 - one loopback FastAPI/Uvicorn worker for the main application
 - one restricted FastAPI/Uvicorn worker bound to the intended LAN interface
-- coordinated service supervision when the kiosk deployment milestone installs
-  systemd units
+- coordinated P7 systemd preparation, main, phone, network-refresh, and kiosk
+  units
 - the production kiosk and phone frontend builds
 - the locked Python 3.13 environment
 

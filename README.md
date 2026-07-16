@@ -10,9 +10,9 @@ and product-experience slices: secure local streaming import, short-lived QR
 handoff, exact-original preservation, safe local derivatives, SQLite
 persistence, Wardrobe and Clothing Details, the manual Outfit Builder,
 deterministic local preview generation, the approved Saved Outfits grid,
-readiness-aware Splash, typed Settings, local backups, and capability-aware
-device information. Kiosk deployment and physical Raspberry Pi validation
-remain later milestones.
+readiness-aware Splash, typed Settings, local backups, capability-aware device
+information, and the complete P7 Raspberry Pi release/deployment architecture.
+Physical Raspberry Pi validation remains an operator milestone.
 
 ## MVP principles
 
@@ -25,7 +25,10 @@ remain later milestones.
 
 See [docs/mvp-scope.md](docs/mvp-scope.md) for product scope and
 [docs/architecture.md](docs/architecture.md) for the runtime and persistence
-design.
+design. Production deployment is documented in
+[docs/raspberry-pi-deployment.md](docs/raspberry-pi-deployment.md), with the
+physical sequence in
+[docs/raspberry-pi-operator-runbook.md](docs/raspberry-pi-operator-runbook.md).
 
 ## Repository structure
 
@@ -428,8 +431,9 @@ during internal navigation, and has a restrained Reduced Motion path.
   deletes a selected backup, cleans bounded temporary data, and stages restore
   or delete-all maintenance.
 - **Device** shows sanitized local information and explicit capability states.
-  Privileged restart, reboot, shutdown, systemd, kiosk, Wi-Fi management, and
-  hardware brightness remain unavailable until P7.
+  Restart, reboot, and shutdown are available only when P7's constrained helper
+  passes ownership, permission, and authorization checks. Wi-Fi management and
+  hardware brightness remain unavailable.
 - **About Muse** describes the local-first privacy model, license, repository,
   and Build Week context using only bundled content.
 
@@ -458,8 +462,8 @@ listener holds its shared lease. Restore keeps the pre-operation safety backup.
 Delete-all requires the UI's two confirmations, the exact typed phrase, and
 explicit backup-loss acknowledgement; activation recreates the migrated empty
 database and required local directories without touching application code.
-P7 systemd units will coordinate the stop/apply/migrate/start sequence on the
-physical device.
+P7 systemd units coordinate the stop/apply/migrate/start sequence on the
+physical device. Activation remains an explicit operator workflow.
 
 ## Verification
 
@@ -570,74 +574,35 @@ The build command emits the kiosk application to `frontend/dist` and the
 restricted phone page to `frontend/dist-phone`. Copy both immutable build
 outputs to the Pi; do not run Vite or install Node on the production device.
 
-Configure the Pi using `backend/.env.example` as a reference. A minimal local
-production configuration includes:
-
-```dotenv
-MUSE_ENVIRONMENT=production
-MUSE_DATA_ROOT=/var/lib/muse
-MUSE_SERVE_FRONTEND=true
-MUSE_FRONTEND_BUILD_PATH=/opt/muse/frontend/dist
-MUSE_TRUSTED_HOSTS=["127.0.0.1","localhost"]
-MUSE_ALLOWED_ORIGINS=[]
-MUSE_MAINTENANCE_ROOT=maintenance
-MUSE_MAX_BACKUP_ARCHIVE_BYTES=2147483648
-MUSE_MAX_BACKUP_ENTRY_COUNT=20000
-MUSE_MAX_BACKUP_COMPRESSION_RATIO=200
-MUSE_MAINTENANCE_CLEANUP_BATCH_SIZE=100
-MUSE_PHONE_UPLOAD_ENABLED=true
-MUSE_PHONE_UPLOAD_BIND_HOST=192.168.1.50
-MUSE_PHONE_UPLOAD_PORT=8001
-MUSE_PHONE_UPLOAD_ADVERTISED_HOST=muse.local
-MUSE_PHONE_UPLOAD_ADVERTISED_IPV4=192.168.1.50
-MUSE_PHONE_UPLOAD_TRUSTED_HOSTS=["muse.local","192.168.1.50"]
-MUSE_PHONE_UPLOAD_SESSION_TTL_SECONDS=600
-MUSE_PHONE_UPLOAD_MAX_ATTEMPTS=3
-MUSE_PHONE_UPLOAD_RECEIVE_TIMEOUT_SECONDS=120
-MUSE_PHONE_UPLOAD_CLEANUP_INTERVAL_SECONDS=300
-MUSE_PHONE_UPLOAD_RETENTION_SECONDS=86400
-MUSE_PHONE_UPLOAD_CLEANUP_BATCH_SIZE=100
-MUSE_PHONE_UPLOAD_RATE_LIMIT_REQUESTS=60
-MUSE_PHONE_UPLOAD_RATE_LIMIT_WINDOW_SECONDS=60
-MUSE_PHONE_UPLOAD_RATE_LIMIT_CLIENTS=256
-MUSE_PHONE_UPLOAD_FRONTEND_BUILD_PATH=/opt/muse/frontend/dist-phone
-```
-
-Replace the example private address with the Pi's actual stable address. If
-`muse.local` is not resolvable from the target phone, leave the advertised host
-unset and use the direct-IP fallback. Never configure the main server with this
-LAN address.
-
-Then install the locked Python environment, migrate, and start the two
-single-worker listeners in separate terminals or supervised processes:
+Build a complete checksummed Raspberry Pi release with:
 
 ```bash
-cd /opt/muse/backend
-uv sync --locked --no-dev
-.venv/bin/muse-backend migrate
-.venv/bin/muse-backend serve --host 127.0.0.1 --port 8000
-.venv/bin/muse-backend serve-phone-upload
+./kiosk/build-release.sh
 ```
 
-Readiness probes remain process-specific and intentionally disclose little on
-the LAN listener:
+The allow-list builder validates both Vite manifests and every referenced asset
+and writes the archive below gitignored `release-output/`. Validate an operator
+command without contacting a device using:
 
 ```bash
-curl --fail --show-error http://127.0.0.1:8000/api/v1/health
-curl --fail --show-error http://127.0.0.1:8000/api/v1/readiness
-curl --fail --show-error http://192.168.1.50:8001/listener-status
+./kiosk/deploy.sh --host muse.local --user kyle \
+  --release /path/to/muse-<release-id>.tar.gz --dry-run
 ```
 
-Run one aggregate bounded cleanup pass for an operator check or later scheduled
-task. Its count includes reconciled, expired, and deleted session rows plus
-removed stale import attempts:
+Read the deployment architecture and operator runbook linked above before any
+physical installation. Repository preparation is not Raspberry Pi validation.
 
-```bash
-.venv/bin/muse-backend cleanup-phone-upload-sessions
-```
+The installer creates `/etc/muse/muse.env` from `kiosk/muse.env.example` only
+when no production configuration exists. Private IPv4, advertised address, and
+phone trusted hosts are generated atomically under `/run/muse`; operators do
+not hardcode DHCP state. The main service always uses `127.0.0.1:8000`, and the
+restricted listener uses port `8787` on exactly one detected RFC1918 address.
 
-Production invokes the locked environment directly so `uv run` cannot sync the
-default development dependency group during device startup.
+Production invokes `/opt/muse/current/kiosk/muse-backend`, which directly uses
+the active release's `.venv/bin/python` and immutable backend source. It never
+uses `uv run` at boot and cannot install a development dependency group during
+runtime. Use the fixed `muse-ctl` commands documented in the deployment guide
+for readiness, listener isolation, cleanup, backups, logs, and lifecycle work.
 
 The main FastAPI process serves the compiled SPA and API from the same loopback
 origin. Direct navigation to React routes receives `index.html`; unknown
