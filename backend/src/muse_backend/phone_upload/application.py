@@ -28,6 +28,7 @@ from muse_backend.phone_upload.static import (
 from muse_backend.schemas.common import ErrorEnvelope
 from muse_backend.schemas.phone_upload import PhoneUploadCompleted, PhoneUploadPublicStatus
 from muse_backend.services.background_processing import reconcile_temporary_imports
+from muse_backend.services.backups import BackupService
 from muse_backend.services.garment_import_workflow import GarmentImportWorkflow
 from muse_backend.services.import_admission import ImportAdmission
 from muse_backend.services.imports import ImportResult
@@ -36,6 +37,7 @@ from muse_backend.services.phone_upload_sessions import (
     PhoneUploadSessionService,
     phone_upload_idempotency_key,
 )
+from muse_backend.services.runtime_lock import RuntimeServiceLock
 from muse_backend.storage.local import LocalStorageService
 
 logger = logging.getLogger(__name__)
@@ -105,24 +107,30 @@ def create_phone_upload_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         storage.create_required_directories()
         storage.secure_database_file()
-        if not phone_frontend_build_available(active_settings.phone_upload_frontend_build_path):
-            raise RuntimeError("the phone-upload listener requires the compiled mobile build")
-        if not migration_status(active_settings, database).is_current:
-            raise RuntimeError("the phone-upload listener requires a current database migration")
-        with admission.interprocess_lock.acquire(blocking=True):
-            sessions.reconcile_all()
-            reconcile_temporary_imports(
-                settings=active_settings,
-                storage=storage,
-                database=database,
-                limit=active_settings.phone_upload_cleanup_batch_size,
+        with RuntimeServiceLock(active_settings).shared():
+            BackupService(active_settings).reconcile_committed_cleanup(
+                limit=active_settings.maintenance_cleanup_batch_size
             )
-        app.state.ready = True
-        try:
-            yield
-        finally:
-            app.state.ready = False
-            database.dispose()
+            if not phone_frontend_build_available(active_settings.phone_upload_frontend_build_path):
+                raise RuntimeError("the phone-upload listener requires the compiled mobile build")
+            if not migration_status(active_settings, database).is_current:
+                raise RuntimeError(
+                    "the phone-upload listener requires a current database migration"
+                )
+            with admission.interprocess_lock.acquire(blocking=True):
+                sessions.reconcile_all()
+                reconcile_temporary_imports(
+                    settings=active_settings,
+                    storage=storage,
+                    database=database,
+                    limit=active_settings.phone_upload_cleanup_batch_size,
+                )
+            app.state.ready = True
+            try:
+                yield
+            finally:
+                app.state.ready = False
+                database.dispose()
 
     app = FastAPI(
         title="Muse Restricted Phone Upload",

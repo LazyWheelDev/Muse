@@ -2,6 +2,7 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import FastAPI
@@ -19,17 +20,21 @@ from muse_backend.middleware.security import (
     JsonCORSMiddleware,
     JsonTrustedHostMiddleware,
     LoopbackOnlyMiddleware,
+    MainSecurityHeadersMiddleware,
     RequestBodyLimitMiddleware,
 )
+from muse_backend.middleware.settings_security import SensitiveSettingsMutationMiddleware
 from muse_backend.schemas.common import ErrorEnvelope
 from muse_backend.services.background_processing import (
     BackgroundProcessingWorker,
     reconcile_interrupted_imports,
     reconcile_temporary_imports,
 )
+from muse_backend.services.backups import BackupService
 from muse_backend.services.import_admission import ImportAdmission
 from muse_backend.services.outfit_previews import reconcile_outfit_previews
 from muse_backend.services.phone_upload_sessions import PhoneUploadSessionService
+from muse_backend.services.runtime_lock import RuntimeServiceLock
 from muse_backend.storage.local import LocalStorageService
 
 logger = logging.getLogger(__name__)
@@ -104,47 +109,52 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except StorageOperationError:
             logger.exception("Muse storage initialization failed; readiness will remain false")
 
-        if active_settings.serve_frontend and not frontend_build_available(
-            active_settings.frontend_build_path
-        ):
-            logger.error("The configured Muse frontend build is unavailable")
-        migrations_current = False
-        try:
-            migrations_current = migration_status(active_settings, database).is_current
-        except Exception:
-            logger.warning("Background processing will wait for the database migration")
-        if migrations_current:
-            with import_admission.interprocess_lock.acquire(blocking=True):
-                reconcile_interrupted_imports(
+        with RuntimeServiceLock(active_settings).shared():
+            if app.state.storage_initialized:
+                BackupService(active_settings).reconcile_committed_cleanup(
+                    limit=active_settings.maintenance_cleanup_batch_size
+                )
+            if active_settings.serve_frontend and not frontend_build_available(
+                active_settings.frontend_build_path
+            ):
+                logger.error("The configured Muse frontend build is unavailable")
+            migrations_current = False
+            try:
+                migrations_current = migration_status(active_settings, database).is_current
+            except Exception:
+                logger.warning("Background processing will wait for the database migration")
+            if migrations_current:
+                with import_admission.interprocess_lock.acquire(blocking=True):
+                    reconcile_interrupted_imports(
+                        settings=active_settings,
+                        storage=storage,
+                        database=database,
+                    )
+                    phone_upload_sessions.reconcile_all()
+                reconcile_outfit_previews(
                     settings=active_settings,
                     storage=storage,
                     database=database,
                 )
-                phone_upload_sessions.reconcile_all()
-            reconcile_outfit_previews(
-                settings=active_settings,
-                storage=storage,
-                database=database,
-            )
-            if active_settings.background_processing_enabled:
-                background_worker.start()
-            cleanup_task = asyncio.create_task(
-                phone_upload_cleanup_loop(cleanup_stop),
-                name="phone-upload-session-cleanup",
-            )
-        try:
-            yield
-        finally:
-            cleanup_stop.set()
-            if cleanup_task is not None:
-                await cleanup_task
-            worker_stopped = background_worker.stop()
-            if worker_stopped:
-                database.dispose()
-            else:
-                logger.warning(
-                    "Keeping the database engine available for an in-flight background job"
+                if active_settings.background_processing_enabled:
+                    background_worker.start()
+                cleanup_task = asyncio.create_task(
+                    phone_upload_cleanup_loop(cleanup_stop),
+                    name="phone-upload-session-cleanup",
                 )
+            try:
+                yield
+            finally:
+                cleanup_stop.set()
+                if cleanup_task is not None:
+                    await cleanup_task
+                worker_stopped = background_worker.stop()
+                if worker_stopped:
+                    database.dispose()
+                else:
+                    logger.warning(
+                        "Keeping the database engine available for an in-flight background job"
+                    )
 
     docs_enabled = active_settings.environment is not Environment.PRODUCTION
     app = FastAPI(
@@ -163,6 +173,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.background_worker = background_worker
     app.state.import_admission = import_admission
     app.state.phone_upload_sessions = phone_upload_sessions
+    app.state.started_at = datetime.now(UTC)
     # Compatibility alias for tests and diagnostics; all production imports use
     # the combined local + inter-process admission object above.
     app.state.import_lock = import_admission.local_lock
@@ -182,6 +193,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         max_body_size=active_settings.max_api_body_size_bytes,
         streaming_paths=("/api/v1/clothing-items/import",),
     )
+    app.add_middleware(
+        SensitiveSettingsMutationMiddleware,
+        allowed_development_origins=active_settings.allowed_origins,
+    )
+    app.add_middleware(MainSecurityHeadersMiddleware)
     if active_settings.environment is Environment.PRODUCTION:
         app.add_middleware(LoopbackOnlyMiddleware)
     app.add_middleware(RequestIdMiddleware)

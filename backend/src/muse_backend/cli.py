@@ -18,6 +18,7 @@ from muse_backend.domain.exceptions import MuseError
 from muse_backend.phone_upload.application import create_phone_upload_app
 from muse_backend.services.background_processing import reconcile_temporary_imports
 from muse_backend.services.import_admission import InterprocessImportLock
+from muse_backend.services.maintenance import apply_staged_maintenance
 from muse_backend.services.phone_upload_sessions import PhoneUploadSessionService
 from muse_backend.storage.local import LocalStorageService
 
@@ -36,6 +37,15 @@ def _parser() -> argparse.ArgumentParser:
     commands.add_parser(
         "serve-phone-upload",
         help="run the restricted phone-upload listener on its configured LAN interface",
+    )
+    apply_maintenance = commands.add_parser(
+        "apply-staged-maintenance",
+        help="apply a staged restore or delete-all operation while both listeners are stopped",
+    )
+    apply_maintenance.add_argument(
+        "--confirm",
+        required=True,
+        help="must be exactly 'APPLY STAGED MUSE MAINTENANCE'",
     )
 
     migrate = commands.add_parser("migrate", help="upgrade the configured database")
@@ -170,6 +180,9 @@ def main() -> None:
         elif arguments.command == "cleanup-phone-upload-sessions":
             processed = _cleanup_phone_upload_sessions(settings)
             print(f"processed phone-upload cleanup records: {processed}")
+        elif arguments.command == "apply-staged-maintenance":
+            operation = apply_staged_maintenance(settings, confirmation=arguments.confirm)
+            print(f"applied staged Muse maintenance: {operation}")
         elif arguments.command == "reset-dev":
             _reset_development_database(settings, confirmed=arguments.confirm)
     except MuseError as error:

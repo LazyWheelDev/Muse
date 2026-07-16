@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -35,6 +36,20 @@ async def test_production_serves_spa_files_with_safe_cache_policy_and_api_preced
     (build / "index.html").write_bytes(index)
     (build / "favicon.svg").write_text("<svg></svg>", encoding="utf-8")
     (assets / "app-abc123.js").write_text("window.Muse = true;", encoding="utf-8")
+    manifest_directory = build / ".vite"
+    manifest_directory.mkdir()
+    (manifest_directory / "manifest.json").write_text(
+        json.dumps(
+            {
+                "index.html": {
+                    "file": "assets/app-abc123.js",
+                    "assets": ["favicon.svg"],
+                    "isEntry": True,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
     settings = production_settings(tmp_path, build)
 
     async with running_client(settings) as client:
@@ -86,6 +101,13 @@ async def test_missing_production_build_keeps_health_live_and_readiness_false(
 
         build.mkdir()
         (build / "index.html").write_text("Muse restored", encoding="utf-8")
+        (build / "assets").mkdir()
+        (build / "assets/recovered.js").write_text("Muse", encoding="utf-8")
+        (build / ".vite").mkdir()
+        (build / ".vite/manifest.json").write_text(
+            json.dumps({"index.html": {"file": "assets/recovered.js", "isEntry": True}}),
+            encoding="utf-8",
+        )
         restored_readiness = await client.get("/api/v1/readiness")
         restored_root = await client.get("/")
 
@@ -114,6 +136,13 @@ async def test_production_readiness_includes_available_frontend_check(tmp_path: 
     build = tmp_path / "dist"
     build.mkdir()
     (build / "index.html").write_text("Muse", encoding="utf-8")
+    (build / "assets").mkdir()
+    (build / "assets/app.js").write_text("Muse", encoding="utf-8")
+    (build / ".vite").mkdir()
+    (build / ".vite/manifest.json").write_text(
+        json.dumps({"index.html": {"file": "assets/app.js", "isEntry": True}}),
+        encoding="utf-8",
+    )
     settings = production_settings(tmp_path, build)
 
     async with running_client(settings) as client:
@@ -139,7 +168,82 @@ def test_frontend_build_availability_rejects_missing_directory_and_index_symlink
 
     (build / "index.html").unlink()
     (build / "index.html").write_text("inside", encoding="utf-8")
+    (build / "assets").mkdir()
+    (build / "assets/app.js").write_text("Muse", encoding="utf-8")
+    (build / ".vite").mkdir()
+    (build / ".vite/manifest.json").write_text(
+        json.dumps({"index.html": {"file": "assets/app.js", "isEntry": True}}),
+        encoding="utf-8",
+    )
     assert frontend_build_available(build)
+
+
+@pytest.mark.unit
+def test_frontend_readiness_validates_index_and_vite_manifest_assets(tmp_path: Path) -> None:
+    build = tmp_path / "dist"
+    assets = build / "assets"
+    manifest_directory = build / ".vite"
+    assets.mkdir(parents=True)
+    manifest_directory.mkdir()
+    (build / "index.html").write_text(
+        '<script type="module" src="/assets/app.js"></script>',
+        encoding="utf-8",
+    )
+    assert not frontend_build_available(build)
+
+    (assets / "app.js").write_text("window.Muse=true", encoding="utf-8")
+    (manifest_directory / "manifest.json").write_text(
+        json.dumps({"index.html": {"file": "assets/app.js", "isEntry": True}}),
+        encoding="utf-8",
+    )
+    assert frontend_build_available(build)
+
+    (manifest_directory / "manifest.json").write_text(
+        json.dumps({"index.html": {"file": "assets/missing.js", "isEntry": True}}),
+        encoding="utf-8",
+    )
+    assert not frontend_build_available(build)
+
+
+@pytest.mark.unit
+def test_frontend_readiness_cache_eventually_detects_deleted_chunk(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    build = tmp_path / "dist"
+    (build / "assets").mkdir(parents=True)
+    (build / ".vite").mkdir()
+    (build / "index.html").write_text("Muse", encoding="utf-8")
+    chunk = build / "assets/app.js"
+    chunk.write_text("Muse", encoding="utf-8")
+    (build / ".vite/manifest.json").write_text(
+        json.dumps({"index.html": {"file": "assets/app.js", "isEntry": True}}),
+        encoding="utf-8",
+    )
+    clock = 0.0
+    monkeypatch.setattr("muse_backend.frontend.time.monotonic", lambda: clock)
+    assert frontend_build_available(build)
+
+    chunk.unlink()
+    clock = 1.0
+    assert frontend_build_available(build)
+    clock = 6.0
+    assert not frontend_build_available(build)
+
+
+async def test_production_never_exposes_vite_manifest(tmp_path: Path) -> None:
+    build = tmp_path / "dist"
+    manifest_directory = build / ".vite"
+    manifest_directory.mkdir(parents=True)
+    (build / "index.html").write_text("Muse", encoding="utf-8")
+    (manifest_directory / "manifest.json").write_text("{}", encoding="utf-8")
+    settings = production_settings(tmp_path, build)
+
+    async with running_client(settings) as client:
+        response = await client.get("/.vite/manifest.json")
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "resource_not_found"
 
 
 @pytest.mark.unit
@@ -169,11 +273,18 @@ async def test_assets_symlink_is_not_mounted_as_static_root(tmp_path: Path) -> N
     outside_assets = tmp_path / "outside-assets"
     outside_assets.mkdir()
     (outside_assets / "secret.js").write_text("secret", encoding="utf-8")
-    (build / "assets").symlink_to(outside_assets, target_is_directory=True)
+    (build / "unsafe-assets").symlink_to(outside_assets, target_is_directory=True)
+    (build / "assets").mkdir()
+    (build / "assets/app.js").write_text("Muse", encoding="utf-8")
+    (build / ".vite").mkdir()
+    (build / ".vite/manifest.json").write_text(
+        json.dumps({"index.html": {"file": "assets/app.js", "isEntry": True}}),
+        encoding="utf-8",
+    )
     settings = production_settings(tmp_path, build)
 
     async with running_client(settings) as client:
-        response = await client.get("/assets/secret.js")
+        response = await client.get("/unsafe-assets/secret.js")
 
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "resource_not_found"

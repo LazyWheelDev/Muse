@@ -58,7 +58,16 @@ class Settings(BaseSettings):
     cutout_image_root: Path = Path("media/garments/cutouts")
     outfit_preview_root: Path = Path("media/outfits/previews")
     backup_root: Path = Path("backups")
+    maintenance_root: Path = Path("maintenance")
     lock_root: Path = Path(".locks")
+    max_backup_archive_bytes: int = Field(
+        default=2 * 1024 * 1024 * 1024,
+        ge=1024 * 1024,
+        le=50 * 1024 * 1024 * 1024,
+    )
+    max_backup_entry_count: int = Field(default=20_000, ge=10, le=100_000)
+    max_backup_compression_ratio: int = Field(default=200, ge=10, le=1000)
+    maintenance_cleanup_batch_size: int = Field(default=100, ge=1, le=1000)
     max_upload_size_bytes: int = Field(default=25 * 1024 * 1024, ge=1024, le=500 * 1024 * 1024)
     max_import_overhead_bytes: int = Field(default=64 * 1024, ge=4096, le=1024 * 1024)
     upload_chunk_size_bytes: int = Field(default=256 * 1024, ge=16 * 1024, le=1024 * 1024)
@@ -223,6 +232,7 @@ class Settings(BaseSettings):
         self.cutout_image_root = self._resolve_data_path(self.cutout_image_root)
         self.outfit_preview_root = self._resolve_data_path(self.outfit_preview_root)
         self.backup_root = self._resolve_data_path(self.backup_root)
+        self.maintenance_root = self._resolve_data_path(self.maintenance_root)
         self.lock_root = self._resolve_data_path(self.lock_root)
         self.frontend_build_path = self._resolve_project_path(self.frontend_build_path)
         self.phone_upload_frontend_build_path = self._resolve_project_path(
@@ -240,6 +250,7 @@ class Settings(BaseSettings):
             self.cutout_image_root,
             self.outfit_preview_root,
             self.backup_root,
+            self.maintenance_root,
             self.lock_root,
         ):
             if not _is_within(path, self.data_root):
@@ -265,6 +276,7 @@ class Settings(BaseSettings):
             self.temp_upload_root,
             self.temp_preview_root,
             self.backup_root,
+            self.maintenance_root,
             self.lock_root,
         )
         for index, first in enumerate(storage_directories):
@@ -366,6 +378,7 @@ class Settings(BaseSettings):
                 (
                     self.data_root,
                     self.database_path.parent,
+                    self.lock_root,
                     self.media_root,
                     self.temp_upload_root,
                     self.temp_preview_root,
@@ -375,7 +388,7 @@ class Settings(BaseSettings):
                     self.cutout_image_root,
                     self.outfit_preview_root,
                     self.backup_root,
-                    self.lock_root,
+                    self.maintenance_root,
                 )
             )
         )
@@ -383,3 +396,7 @@ class Settings(BaseSettings):
     @property
     def import_lock_path(self) -> Path:
         return self.lock_root / "garment-import.lock"
+
+    @property
+    def runtime_lock_path(self) -> Path:
+        return self.lock_root / "runtime-services.lock"

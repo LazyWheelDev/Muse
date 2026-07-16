@@ -34,6 +34,12 @@ async def test_health_is_live_before_database_migration(settings: Settings) -> N
         "message": "The local database schema is not current.",
     }
     assert readiness.json()["checks"]["storage"]["status"] == "ok"
+    assert "script-src 'self'" in health.headers["content-security-policy"]
+    assert "style-src-attr 'unsafe-inline'" in health.headers["content-security-policy"]
+    assert "form-action 'self'" in health.headers["content-security-policy"]
+    assert health.headers["x-frame-options"] == "DENY"
+    assert health.headers["x-content-type-options"] == "nosniff"
+    assert health.headers["referrer-policy"] == "no-referrer"
 
 
 async def test_readiness_reports_all_local_dependencies_ready(

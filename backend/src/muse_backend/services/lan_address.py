@@ -109,6 +109,29 @@ def discover_lan_ipv4() -> str | None:
     return str(min(fallback, key=int)) if fallback else None
 
 
+def discover_lan_interface() -> tuple[str | None, str | None]:
+    candidates = _interface_addresses()
+    priority_prefixes = ("eth", "en", "wlan", "wl")
+    if not candidates:
+        return None, discover_lan_ipv4()
+    candidates.sort(
+        key=lambda item: (
+            next(
+                (
+                    index
+                    for index, prefix in enumerate(priority_prefixes)
+                    if item[0].startswith(prefix)
+                ),
+                len(priority_prefixes),
+            ),
+            item[0],
+            int(item[1]),
+        )
+    )
+    name, address = candidates[0]
+    return name[:32], str(address)
+
+
 def resolve_lan_endpoint(settings: Settings) -> LanEndpoint:
     discovered = discover_lan_ipv4()
     configured_ipv4 = (

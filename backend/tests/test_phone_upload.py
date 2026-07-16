@@ -700,6 +700,8 @@ async def test_restricted_listener_surface_headers_origin_assets_and_rate_limit(
         for private_path in (
             "/api/v1/clothing-items",
             "/api/v1/outfits",
+            "/api/v1/settings",
+            "/api/v1/settings/backups",
             "/api/docs",
             "/api/openapi.json",
             "/openapi.json",

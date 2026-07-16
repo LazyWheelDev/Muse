@@ -154,7 +154,7 @@ class RequestBodyLimitMiddleware:
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if (
             scope["type"] != "http"
-            or scope["method"] not in {"POST", "PUT", "PATCH"}
+            or scope["method"] not in {"POST", "PUT", "PATCH", "DELETE"}
             or scope.get("path") in self.streaming_paths
         ):
             await self.app(scope, receive, send)
@@ -240,6 +240,37 @@ class RequestBodyLimitMiddleware:
             message=message,
         )
         await response(scope, receive, send)
+
+
+class MainSecurityHeadersMiddleware:
+    """Static local-kiosk browser policy for the loopback Muse application."""
+
+    _HEADERS = (
+        (
+            b"content-security-policy",
+            b"default-src 'self'; script-src 'self'; style-src 'self'; "
+            b"style-src-elem 'self'; style-src-attr 'unsafe-inline'; font-src 'self'; "
+            b"img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; "
+            b"base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+        ),
+        (b"x-frame-options", b"DENY"),
+        (b"x-content-type-options", b"nosniff"),
+        (b"referrer-policy", b"no-referrer"),
+    )
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        async def send_with_headers(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                headers = list(message.get("headers", []))
+                existing = {name.lower() for name, _value in headers}
+                headers.extend(header for header in self._HEADERS if header[0] not in existing)
+                message["headers"] = headers
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)
 
 
 class LoopbackOnlyMiddleware:
