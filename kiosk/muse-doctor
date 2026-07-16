@@ -18,6 +18,7 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
@@ -119,7 +120,7 @@ def ports() -> dict[str, list[str]]:
 
 def database_checks(path: Path) -> dict[str, Any]:
     try:
-        with sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=3) as connection:
+        with closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=3)) as connection:
             quick = connection.execute("PRAGMA quick_check").fetchall()
             foreign = connection.execute("PRAGMA foreign_key_check").fetchall()
         return {"quick_check": quick == [("ok",)], "foreign_key_check": len(foreign) == 0}

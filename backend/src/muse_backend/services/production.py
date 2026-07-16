@@ -1,4 +1,5 @@
 import sqlite3
+from contextlib import closing
 
 from muse_backend.config import Environment, Settings
 from muse_backend.database.engine import Database
@@ -97,7 +98,7 @@ def verify_backup(settings: Settings, backup_id: str | None) -> str:
 
 
 def _verify_database(settings: Settings) -> None:
-    with sqlite3.connect(settings.database_path) as connection:
+    with closing(sqlite3.connect(settings.database_path)) as connection:
         quick_check = connection.execute("PRAGMA quick_check").fetchall()
         foreign_keys = connection.execute("PRAGMA foreign_key_check").fetchall()
     if quick_check != [("ok",)] or foreign_keys:
