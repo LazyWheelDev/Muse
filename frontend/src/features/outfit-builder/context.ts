@@ -11,6 +11,7 @@ export interface OutfitBuilderActions {
   hydrate: (outfit: OutfitDetail, originReturnTo?: string | null) => void;
   addGarment: (garment: BuilderGarment, bodyZone?: BodyZone) => void;
   activateGarment: (clothingItemId: number) => void;
+  syncGarmentMedia: (garment: BuilderGarment) => void;
   replaceActiveGarment: (garment: BuilderGarment, bodyZone?: BodyZone) => void;
   moveActiveGarment: (direction: MoveDirection) => void;
   moveActiveTo: (positionX: number, positionY: number) => void;

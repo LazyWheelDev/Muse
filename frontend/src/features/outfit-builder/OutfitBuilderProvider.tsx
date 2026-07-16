@@ -60,6 +60,9 @@ export function OutfitBuilderProvider({
       activateGarment(clothingItemId) {
         dispatch(outfitBuilderAction.activate(clothingItemId));
       },
+      syncGarmentMedia(garment) {
+        dispatch(outfitBuilderAction.syncMedia(garment));
+      },
       replaceActiveGarment(garment, bodyZone) {
         dispatch(outfitBuilderAction.replace(garment, bodyZone));
       },

@@ -882,6 +882,19 @@ clean retained editor state cannot be mistaken for the next new outfit.
 
 ---
 
+## Manual Mac Cutout Verification
+
+1. Import a garment with a transparent source or another source for which the
+   local optional cutout processing completes successfully.
+2. Open Outfit Builder and add that garment.
+3. Before the first save, confirm that the garment is displayed without its
+   background.
+4. Move, resize, rotate, and reorder the garment, then save the outfit.
+5. Reopen the saved outfit and confirm that the cutout, position, scale,
+   rotation, and layer order are unchanged.
+
+---
+
 ## Definition of Done
 
 The P5 Outfit Builder implementation is complete when:

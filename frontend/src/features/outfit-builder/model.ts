@@ -1,5 +1,6 @@
 import type { ClothingItemSummary, GarmentCategory, BodyZone } from '../clothing/model';
 import { defaultBodyZoneByCategory } from '../clothing/model';
+import { garmentVisualCandidates, selectGarmentVisualSource } from '../clothing/imageSelection';
 import type {
   ClothingReferenceStatus,
   OutfitClothingReference,
@@ -114,15 +115,9 @@ export function outfitPlacementKey(clothingItemId: number): string {
   return `clothing-${clothingItemId}`;
 }
 
-function uniqueImages<T extends { id: number }>(images: readonly (T | null)[]): T[] {
-  return images.filter(
-    (image, index, all): image is T =>
-      image !== null && all.findIndex((candidate) => candidate?.id === image.id) === index,
-  );
-}
-
 export function builderGarmentFromClothingItem(item: ClothingItemSummary): BuilderGarment {
-  const displayCandidates = uniqueImages([item.displayImage, item.thumbnailImage]);
+  const displayCandidates = garmentVisualCandidates([item.displayImage]);
+  const displayImage = selectGarmentVisualSource(displayCandidates);
   return {
     clothingItemId: item.id,
     clothingItemStatus: 'active',
@@ -132,8 +127,8 @@ export function builderGarmentFromClothingItem(item: ClothingItemSummary): Build
       garmentCategory: item.garmentCategory,
       defaultBodyZone: item.defaultBodyZone,
       deletedAt: null,
-      primaryImage: item.displayImage,
-      displayImage: item.displayImage,
+      primaryImage: displayImage,
+      displayImage,
       thumbnailImage: item.thumbnailImage,
       imageCandidates: displayCandidates,
     },

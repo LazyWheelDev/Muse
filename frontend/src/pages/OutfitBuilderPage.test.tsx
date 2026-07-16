@@ -11,6 +11,28 @@ import {
 } from '../test/clothingFixtures';
 import { rawOutfitClothingReference, rawOutfitDetail, rawOutfitItem } from '../test/outfitFixtures';
 import { renderApp } from '../test/renderApp';
+import { decodeClothingPage } from '../features/clothing/decoders';
+import { clothingKeys } from '../features/clothing/queries';
+
+const rawCutout = {
+  ...rawImage,
+  id: 14,
+  image_kind: 'cutout',
+  is_primary: false,
+  content_url: '/api/v1/media/garments/cutouts/group-1.webp',
+} as const;
+
+const rawPendingClothingSummary = {
+  ...rawClothingSummary,
+  image_processing_state: 'processing',
+} as const;
+
+const rawCompletedCutoutSummary = {
+  ...rawClothingSummary,
+  image_processing_state: 'completed',
+  primary_image: rawCutout,
+  display_image: rawCutout,
+} as const;
 
 const rawJacketImage = {
   ...rawImage,
@@ -149,6 +171,43 @@ interface OutfitWriteItem {
 interface OutfitWritePayload {
   name: string;
   items: OutfitWriteItem[];
+}
+
+interface PersistedBuilderPlacement {
+  clothing_item_id: number;
+  position_x: number;
+  position_y: number;
+  scale: number;
+  rotation: number;
+  layer_index: number;
+  clothing_item: {
+    image_candidates: Array<{ image_kind: string; content_url: string }>;
+  };
+}
+
+interface PersistedBuilderState {
+  mode: string;
+  active_clothing_item_id: number | null;
+  placements: PersistedBuilderPlacement[];
+}
+
+function persistedBuilderState(): PersistedBuilderState {
+  const serialized = window.sessionStorage.getItem('muse.outfit-builder.v1');
+  if (serialized === null) {
+    throw new Error('Expected Outfit Builder state to be persisted.');
+  }
+  return (JSON.parse(serialized) as { state: PersistedBuilderState }).state;
+}
+
+function placementState(placement: PersistedBuilderPlacement) {
+  return {
+    clothing_item_id: placement.clothing_item_id,
+    position_x: placement.position_x,
+    position_y: placement.position_y,
+    scale: placement.scale,
+    rotation: placement.rotation,
+    layer_index: placement.layer_index,
+  };
 }
 
 interface FetchBehavior {
@@ -361,6 +420,130 @@ describe('OutfitBuilderPage', () => {
       '/wardrobe?category=top&item=1',
     );
     expect(screen.getByText('Linen Shirt')).toBeVisible();
+  });
+
+  it('uses an already available cutout immediately when a garment is added', async () => {
+    vi.stubGlobal('fetch', outfitFetchMock({ clothingItems: [rawCompletedCutoutSummary] }));
+    const user = userEvent.setup();
+    renderApp('/outfit-builder');
+
+    await addGarment(user);
+
+    await waitFor(() =>
+      expect(
+        persistedBuilderState().placements[0]?.clothing_item.image_candidates[0],
+      ).toMatchObject({
+        image_kind: 'cutout',
+        content_url: rawCutout.content_url,
+      }),
+    );
+    expect(screen.getByRole('button', { name: 'Unsaved changes' })).toBeVisible();
+  });
+
+  it('keeps a pending fallback, then swaps only media when the clothing query receives a cutout', async () => {
+    vi.stubGlobal(
+      'fetch',
+      outfitFetchMock({ clothingItems: [rawPendingClothingSummary, rawJacketSummary] }),
+    );
+    const user = userEvent.setup();
+    const { queryClient } = renderApp('/outfit-builder');
+
+    await addGarment(user);
+    await addGarment(user, 'Linen Jacket');
+    await user.click(screen.getByRole('button', { name: 'Unsaved changes' }));
+    const dialog = screen.getByRole('dialog', { name: 'Outfit items' });
+    const shirtRow = within(dialog).getByText('Linen Shirt').closest('li');
+    if (shirtRow === null) {
+      throw new Error('Expected the pending garment in the Builder layer list.');
+    }
+    await user.click(within(shirtRow).getByRole('button', { name: 'Select' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Close' }));
+    await user.click(screen.getByRole('button', { name: 'Move garment right' }));
+    await user.click(screen.getByRole('button', { name: 'Increase garment size' }));
+    await user.click(screen.getByRole('button', { name: 'Rotate garment right' }));
+    await user.click(screen.getByRole('button', { name: 'Move garment forward' }));
+
+    await waitFor(() =>
+      expect(
+        persistedBuilderState().placements.find(
+          (placement) => placement.clothing_item_id === rawClothingSummary.id,
+        )?.clothing_item.image_candidates[0]?.image_kind,
+      ).toBe('normalized'),
+    );
+    const before = persistedBuilderState();
+    const placementsBefore = before.placements.map(placementState);
+
+    act(() => {
+      queryClient.setQueryData(
+        clothingKeys.list('all'),
+        decodeClothingPage({
+          items: [rawCompletedCutoutSummary, rawJacketSummary],
+          total: 2,
+          limit: 100,
+          offset: 0,
+        }),
+      );
+    });
+
+    await waitFor(() =>
+      expect(
+        persistedBuilderState().placements.find(
+          (placement) => placement.clothing_item_id === rawClothingSummary.id,
+        )?.clothing_item.image_candidates[0],
+      ).toMatchObject({ image_kind: 'cutout', content_url: rawCutout.content_url }),
+    );
+    const after = persistedBuilderState();
+    expect(after.placements.map(placementState)).toEqual(placementsBefore);
+    expect(after.placements).toHaveLength(2);
+    expect(new Set(after.placements.map((placement) => placement.clothing_item_id)).size).toBe(2);
+    expect(after.active_clothing_item_id).toBe(before.active_clothing_item_id);
+    expect(after.mode).toBe(before.mode);
+    expect(screen.getByRole('button', { name: 'Unsaved changes' })).toBeVisible();
+  });
+
+  it('reopens a saved cutout outfit with its persisted transform and layer intact', async () => {
+    const reopened = {
+      ...rawOutfitDetail,
+      items: [
+        {
+          ...rawOutfitItem,
+          clothing_item: {
+            ...rawOutfitClothingReference,
+            primary_image: rawImage,
+            display_image: rawCutout,
+            image_candidates: [rawCutout, rawImage],
+          },
+          position_x: 0.31,
+          position_y: 0.46,
+          scale: 1.4,
+          rotation: -15,
+          layer_index: 7,
+        },
+      ],
+    } as const;
+    vi.stubGlobal(
+      'fetch',
+      outfitFetchMock({
+        clothingItems: [rawCompletedCutoutSummary],
+        outfitDetail: reopened,
+      }),
+    );
+    renderApp('/outfit-builder?outfitId=20');
+
+    expect(await screen.findByRole('button', { name: 'Saved Outfit' })).toBeVisible();
+    await waitFor(() => {
+      const state = persistedBuilderState();
+      expect(state.placements).toHaveLength(1);
+      expect(state.placements[0]).toMatchObject({
+        position_x: 0.31,
+        position_y: 0.46,
+        scale: 1.4,
+        rotation: -15,
+        layer_index: 0,
+      });
+      expect(state.placements[0]?.clothing_item.image_candidates[0]?.image_kind).toBe('cutout');
+    });
+    expect(screen.getByRole('button', { name: 'Saved' })).toBeVisible();
   });
 
   it('adds two distinct garments to the same body zone and supports layer, reset, and remove commands', async () => {

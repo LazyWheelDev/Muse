@@ -1,34 +1,63 @@
 import type { ClothingImage, ClothingImageGroup, ClothingItemSummary, ImageKind } from './model';
 
-const largePreference: readonly ImageKind[] = ['cutout', 'normalized', 'original', 'thumbnail'];
+type OptionalClothingImage = ClothingImage | null | undefined;
+
+const visualPreference: readonly ImageKind[] = ['cutout', 'normalized', 'original'];
 const thumbnailPreference: readonly ImageKind[] = ['thumbnail', 'cutout', 'normalized', 'original'];
 
 function selectByPreference(
-  images: readonly ClothingImage[],
+  images: readonly OptionalClothingImage[] | null | undefined,
   preference: readonly ImageKind[],
 ): ClothingImage | null {
+  if (images === null || images === undefined) {
+    return null;
+  }
   for (const imageKind of preference) {
-    const match = images.find((image) => image.imageKind === imageKind);
+    const match = images.find((image) => image?.imageKind === imageKind);
     if (match !== undefined) {
-      return match;
+      return match ?? null;
     }
   }
   return null;
 }
 
 function orderByPreference(
-  images: readonly ClothingImage[],
+  images: readonly OptionalClothingImage[] | null | undefined,
   preference: readonly ImageKind[],
 ): ClothingImage[] {
-  return preference.flatMap((kind) => images.filter((image) => image.imageKind === kind));
+  if (images === null || images === undefined) {
+    return [];
+  }
+  const ordered = preference.flatMap((kind) =>
+    images.filter((image): image is ClothingImage => image?.imageKind === kind),
+  );
+  return ordered.filter(
+    (image, index, all) =>
+      all.findIndex((candidate) => candidate.contentUrl === image.contentUrl) === index,
+  );
+}
+
+export function selectGarmentVisualSource(
+  images: readonly OptionalClothingImage[] | null | undefined,
+): ClothingImage | null {
+  return selectByPreference(images, visualPreference);
+}
+
+export function garmentVisualCandidates(
+  images: readonly OptionalClothingImage[] | null | undefined,
+): ClothingImage[] {
+  return orderByPreference(images, visualPreference);
 }
 
 export function selectGroupDisplayImage(group: ClothingImageGroup): ClothingImage | null {
-  return selectByPreference(group.variants, largePreference);
+  return selectGarmentVisualSource(group.variants);
 }
 
 export function groupDisplayCandidates(group: ClothingImageGroup): ClothingImage[] {
-  return orderByPreference(group.variants, largePreference);
+  return [
+    ...garmentVisualCandidates(group.variants),
+    ...orderByPreference(group.variants, ['thumbnail']),
+  ];
 }
 
 export function selectGroupThumbnail(group: ClothingImageGroup): ClothingImage | null {
@@ -36,7 +65,7 @@ export function selectGroupThumbnail(group: ClothingImageGroup): ClothingImage |
 }
 
 export function selectSummaryDisplayImage(item: ClothingItemSummary): ClothingImage | null {
-  return item.displayImage ?? item.thumbnailImage;
+  return selectGarmentVisualSource([item.displayImage]) ?? item.thumbnailImage;
 }
 
 export function selectSummaryThumbnail(item: ClothingItemSummary): ClothingImage | null {

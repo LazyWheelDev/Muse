@@ -48,6 +48,7 @@ import {
 } from '../features/clothing/wardrobeContext';
 import {
   groupDisplayCandidates,
+  garmentVisualCandidates,
   selectGroupDisplayImage,
   selectGroupThumbnail,
   selectSummaryDisplayImage,
@@ -125,7 +126,7 @@ function builderGarmentFromDetail(item: ClothingItemDetail): BuilderGarment {
       primaryImage: selectGroupDisplayImage(primaryGroup),
       displayImage: selectGroupDisplayImage(primaryGroup),
       thumbnailImage: selectGroupThumbnail(primaryGroup),
-      imageCandidates: candidates,
+      imageCandidates: garmentVisualCandidates(candidates),
     },
   };
 }
@@ -135,6 +136,11 @@ function effectiveBodyZone(item: ClothingItemSummary): BodyZone {
 }
 
 function workspacePlacement(placement: OutfitPlacement): WorkspacePlacement {
+  const visualCandidates = garmentVisualCandidates([
+    ...placement.clothingItem.imageCandidates,
+    placement.clothingItem.displayImage,
+    placement.clothingItem.primaryImage,
+  ]);
   return {
     clientId: placement.key,
     name: placement.clothingItem.name,
@@ -144,12 +150,7 @@ function workspacePlacement(placement: OutfitPlacement): WorkspacePlacement {
     scale: placement.scale,
     rotation: placement.rotation,
     layerIndex: placement.layerIndex,
-    imageCandidates: uniqueImages([
-      ...placement.clothingItem.imageCandidates,
-      placement.clothingItem.displayImage,
-      placement.clothingItem.primaryImage,
-      placement.clothingItem.thumbnailImage,
-    ]),
+    imageCandidates: uniqueImages([...visualCandidates, placement.clothingItem.thumbnailImage]),
     deleted: placement.clothingItemStatus === 'deleted',
   };
 }
@@ -194,6 +195,10 @@ export function OutfitBuilderPage() {
   const initializedEntryRef = useRef(false);
   const processedHandoffRef = useRef<number | null>(null);
   const deletedOutfitIdRef = useRef<number | null>(null);
+  const placedGarmentIdSignature = state.placements
+    .map((placement) => placement.clothingItemId)
+    .sort((left, right) => left - right)
+    .join(',');
   const workspacePlacements = useMemo(
     () => state.placements.map((placement) => workspacePlacement(placement)),
     [state.placements],
@@ -278,7 +283,8 @@ export function OutfitBuilderPage() {
     if (
       handedOffGarmentId <= 0 ||
       processedHandoffRef.current === handedOffGarmentId ||
-      handoffQuery.data === undefined
+      handoffQuery.data === undefined ||
+      handoffQuery.isFetching
     ) {
       return;
     }
@@ -287,7 +293,26 @@ export function OutfitBuilderPage() {
     const next = new URLSearchParams(searchParameters);
     next.delete('garment');
     setSearchParameters(next, { replace: true });
-  }, [actions, handedOffGarmentId, handoffQuery.data, searchParameters, setSearchParameters]);
+  }, [
+    actions,
+    handedOffGarmentId,
+    handoffQuery.data,
+    handoffQuery.isFetching,
+    searchParameters,
+    setSearchParameters,
+  ]);
+
+  useEffect(() => {
+    if (clothingQuery.data === undefined || placedGarmentIdSignature === '') {
+      return;
+    }
+    const placedIds = new Set(placedGarmentIdSignature.split(',').map(Number));
+    for (const item of clothingQuery.data.items) {
+      if (placedIds.has(item.id)) {
+        actions.syncGarmentMedia(builderGarmentFromClothingItem(item));
+      }
+    }
+  }, [actions, clothingQuery.data, placedGarmentIdSignature]);
 
   useEffect(() => {
     if (

@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { QueryClient } from '@tanstack/react-query';
+import { useRef } from 'react';
 
 import {
   deleteClothingItem,
@@ -25,17 +26,42 @@ export const clothingKeys = {
   detail: (itemId: number) => [...clothingKeys.details(), itemId] as const,
 };
 
+const PROCESSING_REFRESH_INTERVAL_MS = 2_000;
+const PROCESSING_REFRESH_WINDOW_MS = 2 * 60_000;
+
+function boundedProcessingRefresh(
+  processing: boolean,
+  scope: string | number,
+  refreshWindow: { current: { scope: string | number; startedAt: number } | null },
+): number | false {
+  if (!processing) {
+    refreshWindow.current = null;
+    return false;
+  }
+  const now = Date.now();
+  if (refreshWindow.current?.scope !== scope) {
+    refreshWindow.current = { scope, startedAt: now };
+  }
+  return now - refreshWindow.current.startedAt < PROCESSING_REFRESH_WINDOW_MS
+    ? PROCESSING_REFRESH_INTERVAL_MS
+    : false;
+}
+
 export function useClothingList(category: GarmentCategory | 'all') {
+  const refreshWindow = useRef<{ scope: string | number; startedAt: number } | null>(null);
   return useQuery({
     queryKey: clothingKeys.list(category),
     queryFn: ({ signal }) => listClothingItems(category, signal),
+    refetchOnMount: 'always',
     refetchInterval: (query) =>
-      query.state.data?.items.some(
-        (item) =>
-          item.imageProcessingState === 'pending' || item.imageProcessingState === 'processing',
-      )
-        ? 2_000
-        : false,
+      boundedProcessingRefresh(
+        query.state.data?.items.some(
+          (item) =>
+            item.imageProcessingState === 'pending' || item.imageProcessingState === 'processing',
+        ) === true,
+        category,
+        refreshWindow,
+      ),
   });
 }
 
@@ -60,13 +86,19 @@ function summaryFromDetail(item: ClothingItemDetail): ClothingItemSummary {
 }
 
 export function useClothingDetail(itemId: number) {
+  const refreshWindow = useRef<{ scope: string | number; startedAt: number } | null>(null);
   return useQuery({
     queryKey: clothingKeys.detail(itemId),
     queryFn: ({ signal }) => getClothingItem(itemId, signal),
     enabled: Number.isSafeInteger(itemId) && itemId > 0,
+    refetchOnMount: 'always',
     refetchInterval: (query) => {
       const state = query.state.data?.imageProcessingState;
-      return state === 'pending' || state === 'processing' ? 2_000 : false;
+      return boundedProcessingRefresh(
+        state === 'pending' || state === 'processing',
+        itemId,
+        refreshWindow,
+      );
     },
   });
 }

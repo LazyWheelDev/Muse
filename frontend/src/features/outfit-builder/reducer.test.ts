@@ -20,7 +20,7 @@ import {
   selectOutfitBuilderIsDirty,
   serializeOutfitBuilderCreate,
 } from './model';
-import type { BuilderGarment, OutfitBuilderState } from './model';
+import type { BuilderGarment, OutfitBuilderState, OutfitPlacement } from './model';
 import {
   createInitialOutfitBuilderState,
   outfitBuilderAction,
@@ -55,6 +55,20 @@ function reduce(
   ...actions: readonly OutfitBuilderAction[]
 ): OutfitBuilderState {
   return actions.reduce(outfitBuilderReducer, state);
+}
+
+function placementWithoutMedia(placement: OutfitPlacement) {
+  return {
+    key: placement.key,
+    clothingItemId: placement.clothingItemId,
+    clothingItemStatus: placement.clothingItemStatus,
+    bodyZone: placement.bodyZone,
+    positionX: placement.positionX,
+    positionY: placement.positionY,
+    scale: placement.scale,
+    rotation: placement.rotation,
+    layerIndex: placement.layerIndex,
+  };
 }
 
 function twoItemOutfit(): OutfitDetail {
@@ -274,5 +288,58 @@ describe('Outfit Builder reducer', () => {
       positionX: 0.2,
       positionY: 0.3,
     });
+  });
+
+  it('syncs a later cutout without changing transforms, layers, selection, duplicates, or draft state', () => {
+    const normalized = clothingFixture.displayImage;
+    if (normalized === null) {
+      throw new Error('The clothing fixture requires a normalized image.');
+    }
+    const first = garment(1, 'top', 'upper_body');
+    const second = garment(2, 'outerwear', 'upper_body');
+    const cutout = {
+      ...normalized,
+      id: 901,
+      imageKind: 'cutout' as const,
+      contentUrl: '/api/v1/media/garments/cutouts/linen-shirt.webp',
+    };
+    const refreshed = builderGarmentFromClothingItem({
+      ...clothingFixture,
+      displayImage: cutout,
+    });
+    let state = reduce(
+      createInitialOutfitBuilderState(),
+      outfitBuilderAction.add(first),
+      outfitBuilderAction.add(second),
+      outfitBuilderAction.activate(1),
+      outfitBuilderAction.moveTo(0.23, 0.41),
+      outfitBuilderAction.resize('increase'),
+      outfitBuilderAction.rotate('right'),
+      outfitBuilderAction.moveLayer('forward'),
+      outfitBuilderAction.rename('Layered draft'),
+      outfitBuilderAction.markSaved(42),
+      outfitBuilderAction.move('left'),
+    );
+    const placementsBefore = state.placements.map(placementWithoutMedia);
+    const baselineBefore = state.baseline.placements.map(placementWithoutMedia);
+    const activeBefore = state.activePlacementKey;
+
+    expect(selectOutfitBuilderIsDirty(state)).toBe(true);
+    state = outfitBuilderReducer(state, outfitBuilderAction.syncMedia(refreshed));
+
+    expect(state.placements.map(placementWithoutMedia)).toEqual(placementsBefore);
+    expect(state.baseline.placements.map(placementWithoutMedia)).toEqual(baselineBefore);
+    expect(state.placements).toHaveLength(2);
+    expect(new Set(state.placements.map((placement) => placement.clothingItemId)).size).toBe(2);
+    expect(state.activePlacementKey).toBe(activeBefore);
+    expect(selectOutfitBuilderIsDirty(state)).toBe(true);
+    expect(
+      state.placements.find((placement) => placement.clothingItemId === 1)?.clothingItem
+        .imageCandidates,
+    ).toEqual([cutout, normalized]);
+    expect(
+      state.baseline.placements.find((placement) => placement.clothingItemId === 1)?.clothingItem
+        .imageCandidates[0],
+    ).toEqual(cutout);
   });
 });

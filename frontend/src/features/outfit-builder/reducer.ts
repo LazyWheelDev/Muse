@@ -1,4 +1,7 @@
 import type { BodyZone } from '../clothing/model';
+import type { ClothingImage } from '../clothing/model';
+import { garmentVisualCandidates, selectGarmentVisualSource } from '../clothing/imageSelection';
+import type { OutfitClothingReference } from '../outfits/model';
 import type { OutfitDetail } from '../outfits/model';
 import {
   cloneOutfitBuilderBaseline,
@@ -35,6 +38,7 @@ export type OutfitBuilderAction =
   | { type: 'hydrate'; outfit: OutfitDetail; originReturnTo: string | null }
   | { type: 'add'; garment: BuilderGarment; bodyZone?: BodyZone }
   | { type: 'activate'; clothingItemId: number }
+  | { type: 'sync-media'; garment: BuilderGarment }
   | { type: 'replace'; garment: BuilderGarment; bodyZone?: BodyZone }
   | { type: 'move'; direction: MoveDirection }
   | { type: 'move-to'; positionX: number; positionY: number }
@@ -163,6 +167,95 @@ function replaceActiveGarment(
   };
 }
 
+function sameImage(left: ClothingImage | null, right: ClothingImage | null): boolean {
+  return (
+    left === right ||
+    (left !== null &&
+      right !== null &&
+      left.id === right.id &&
+      left.contentUrl === right.contentUrl &&
+      left.updatedAt === right.updatedAt)
+  );
+}
+
+function sameImages(left: readonly ClothingImage[], right: readonly ClothingImage[]): boolean {
+  return (
+    left.length === right.length &&
+    left.every((image, index) => sameImage(image, right[index] ?? null))
+  );
+}
+
+function mergeGarmentMedia(
+  current: OutfitClothingReference,
+  incoming: OutfitClothingReference,
+): OutfitClothingReference {
+  const imageCandidates = garmentVisualCandidates([
+    ...incoming.imageCandidates,
+    incoming.displayImage,
+    incoming.primaryImage,
+    ...current.imageCandidates,
+    current.displayImage,
+    current.primaryImage,
+  ]);
+  const displayImage = selectGarmentVisualSource(imageCandidates);
+  const primaryImage = incoming.primaryImage ?? current.primaryImage;
+  const thumbnailImage = incoming.thumbnailImage ?? current.thumbnailImage;
+  if (
+    sameImage(current.displayImage, displayImage) &&
+    sameImage(current.primaryImage, primaryImage) &&
+    sameImage(current.thumbnailImage, thumbnailImage) &&
+    sameImages(current.imageCandidates, imageCandidates)
+  ) {
+    return current;
+  }
+  return {
+    ...current,
+    primaryImage,
+    displayImage,
+    thumbnailImage,
+    imageCandidates,
+  };
+}
+
+function syncGarmentMedia(state: OutfitBuilderState, garment: BuilderGarment): OutfitBuilderState {
+  let placementsChanged = false;
+  const placements = state.placements.map((placement) => {
+    if (placement.clothingItemId !== garment.clothingItemId) {
+      return placement;
+    }
+    const clothingItem = mergeGarmentMedia(placement.clothingItem, garment.clothingItem);
+    if (clothingItem === placement.clothingItem) {
+      return placement;
+    }
+    placementsChanged = true;
+    return { ...placement, clothingItem };
+  });
+
+  let baselineChanged = false;
+  const baselinePlacements = state.baseline.placements.map((placement) => {
+    if (placement.clothingItemId !== garment.clothingItemId) {
+      return placement;
+    }
+    const clothingItem = mergeGarmentMedia(placement.clothingItem, garment.clothingItem);
+    if (clothingItem === placement.clothingItem) {
+      return placement;
+    }
+    baselineChanged = true;
+    return { ...placement, clothingItem };
+  });
+
+  if (!placementsChanged && !baselineChanged) {
+    return state;
+  }
+  return {
+    ...state,
+    placements,
+    baseline: baselineChanged
+      ? { ...state.baseline, placements: baselinePlacements }
+      : state.baseline,
+  };
+}
+
 function moveLayer(state: OutfitBuilderState, direction: LayerDirection): OutfitBuilderState {
   if (state.activePlacementKey === null) {
     return state;
@@ -250,6 +343,8 @@ export function outfitBuilderReducer(
         ? { ...state, activePlacementKey: key }
         : state;
     }
+    case 'sync-media':
+      return syncGarmentMedia(state, action.garment);
     case 'replace':
       return replaceActiveGarment(state, action.garment, action.bodyZone);
     case 'move':
@@ -384,6 +479,10 @@ export const outfitBuilderAction = {
   activate: (clothingItemId: number): OutfitBuilderAction => ({
     type: 'activate',
     clothingItemId,
+  }),
+  syncMedia: (garment: BuilderGarment): OutfitBuilderAction => ({
+    type: 'sync-media',
+    garment,
   }),
   replace: (garment: BuilderGarment, bodyZone?: BodyZone): OutfitBuilderAction => ({
     type: 'replace',
