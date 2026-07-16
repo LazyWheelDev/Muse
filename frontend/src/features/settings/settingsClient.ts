@@ -6,6 +6,7 @@ import {
   decodeCapabilities,
   decodeCleanup,
   decodeDeviceStatus,
+  decodeDeviceAction,
   decodeNetworkStatus,
   decodeMaintenanceStatus,
   decodeSettingsResponse,
@@ -19,6 +20,8 @@ import type {
   CleanupResponse,
   DeviceCapabilities,
   DeviceStatus,
+  DeviceAction,
+  DeviceActionResponse,
   NetworkStatus,
   MaintenanceStatus,
   SettingsResponse,
@@ -76,6 +79,18 @@ export function getDeviceStatus(signal?: AbortSignal): Promise<DeviceStatus> {
 
 export function getCapabilities(signal?: AbortSignal): Promise<DeviceCapabilities> {
   return requestJson('/settings/capabilities', decodeCapabilities, signalOptions(signal));
+}
+
+export function scheduleDeviceAction(action: DeviceAction): Promise<DeviceActionResponse> {
+  const confirmations: Record<DeviceAction, string> = {
+    restart_application: 'RESTART MUSE',
+    reboot_device: 'RESTART DEVICE',
+    shutdown_device: 'SHUT DOWN DEVICE',
+  };
+  return requestJson(`/settings/device-actions/${action}` as const, decodeDeviceAction, {
+    method: 'POST',
+    ...jsonBody({ confirmation: confirmations[action] }),
+  });
 }
 
 export function getBackups(signal?: AbortSignal): Promise<BackupList> {

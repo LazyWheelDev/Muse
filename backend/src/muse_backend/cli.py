@@ -20,6 +20,11 @@ from muse_backend.services.background_processing import reconcile_temporary_impo
 from muse_backend.services.import_admission import InterprocessImportLock
 from muse_backend.services.maintenance import apply_staged_maintenance
 from muse_backend.services.phone_upload_sessions import PhoneUploadSessionService
+from muse_backend.services.production import (
+    create_verified_backup,
+    prepare_production,
+    verify_backup,
+)
 from muse_backend.storage.local import LocalStorageService
 
 logger = logging.getLogger(__name__)
@@ -53,6 +58,13 @@ def _parser() -> argparse.ArgumentParser:
 
     commands.add_parser("migration-status", help="show current and expected revisions")
     commands.add_parser("migration-check", help="check models against the migration head")
+    commands.add_parser(
+        "prepare-production",
+        help="apply confirmed staged maintenance, migrate, and reconcile before startup",
+    )
+    commands.add_parser("create-backup", help="create and verify a local safety backup")
+    verify = commands.add_parser("verify-backup", help="verify one backup or the latest backup")
+    verify.add_argument("backup_id", nargs="?", default=None)
     commands.add_parser(
         "cleanup-phone-upload-sessions",
         help="reconcile and remove one bounded batch of retained phone-upload sessions",
@@ -177,6 +189,15 @@ def main() -> None:
                 raise RuntimeError("database migration is not current")
         elif arguments.command == "migration-check":
             check_migration_consistency(settings)
+        elif arguments.command == "prepare-production":
+            operation = prepare_production(settings)
+            print(f"production preparation complete; staged maintenance: {operation or 'none'}")
+        elif arguments.command == "create-backup":
+            backup_id = create_verified_backup(settings)
+            print(f"verified backup: {backup_id}")
+        elif arguments.command == "verify-backup":
+            backup_id = verify_backup(settings, arguments.backup_id)
+            print(f"verified backup: {backup_id}")
         elif arguments.command == "cleanup-phone-upload-sessions":
             processed = _cleanup_phone_upload_sessions(settings)
             print(f"processed phone-upload cleanup records: {processed}")
@@ -188,7 +209,7 @@ def main() -> None:
     except MuseError as error:
         logger.error("%s", error.message)
         sys.exit(1)
-    except (OSError, RuntimeError) as error:
+    except (OSError, RuntimeError, ValueError) as error:
         logger.error("%s", error)
         sys.exit(1)
 

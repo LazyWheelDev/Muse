@@ -11,11 +11,12 @@ import {
   getMaintenanceStatus,
   getSettings,
   getStorageSummary,
+  scheduleDeviceAction,
   stageBackupRestore,
   stageDeleteAllData,
   updateSettings,
 } from './settingsClient';
-import type { ApplicationPreferencesUpdate } from './model';
+import type { ApplicationPreferencesUpdate, DeviceAction } from './model';
 
 export const settingsKeys = {
   all: ['settings'] as const,
@@ -76,6 +77,10 @@ export function useCapabilities() {
     queryFn: ({ signal }) => getCapabilities(signal),
     staleTime: 5 * 60_000,
   });
+}
+
+export function useScheduleDeviceAction() {
+  return useMutation({ mutationFn: (action: DeviceAction) => scheduleDeviceAction(action) });
 }
 
 export function useBackups() {

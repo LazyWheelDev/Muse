@@ -83,6 +83,13 @@ export interface DeviceCapabilities {
   backupRestore: CapabilityStatus;
 }
 
+export type DeviceAction = 'restart_application' | 'reboot_device' | 'shutdown_device';
+
+export interface DeviceActionResponse {
+  action: DeviceAction;
+  status: 'scheduled';
+}
+
 export type ThrottlingStatus = 'not_checked' | 'normal' | 'warning' | 'unavailable';
 
 export interface DeviceStatus {

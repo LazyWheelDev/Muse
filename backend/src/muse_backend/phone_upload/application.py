@@ -13,6 +13,7 @@ from muse_backend.database.engine import Database
 from muse_backend.database.migrations import migration_status
 from muse_backend.domain.enums import PhoneUploadSessionStatus
 from muse_backend.domain.exceptions import MuseError, ResourceNotFoundError
+from muse_backend.middleware.device_action import DeviceActionPendingMiddleware
 from muse_backend.middleware.request_id import RequestIdMiddleware
 from muse_backend.middleware.security import JsonTrustedHostMiddleware, RequestBodyLimitMiddleware
 from muse_backend.phone_upload.security import (
@@ -289,6 +290,7 @@ def create_phone_upload_app(settings: Settings | None = None) -> FastAPI:
         streaming_paths=("/phone-api/v1/upload",),
     )
     app.add_middleware(PhoneSecurityHeadersMiddleware)
+    app.add_middleware(DeviceActionPendingMiddleware, settings=active_settings)
     app.add_middleware(RequestIdMiddleware)
 
     register_error_handlers(app)

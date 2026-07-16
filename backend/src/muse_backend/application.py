@@ -15,6 +15,7 @@ from muse_backend.database.engine import Database
 from muse_backend.database.migrations import migration_status
 from muse_backend.domain.exceptions import ResourceConflictError, StorageOperationError
 from muse_backend.frontend import frontend_build_available, register_frontend_routes
+from muse_backend.middleware.device_action import DeviceActionPendingMiddleware
 from muse_backend.middleware.request_id import RequestIdMiddleware
 from muse_backend.middleware.security import (
     JsonCORSMiddleware,
@@ -200,6 +201,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(MainSecurityHeadersMiddleware)
     if active_settings.environment is Environment.PRODUCTION:
         app.add_middleware(LoopbackOnlyMiddleware)
+    app.add_middleware(DeviceActionPendingMiddleware, settings=active_settings)
     app.add_middleware(RequestIdMiddleware)
 
     register_error_handlers(app)

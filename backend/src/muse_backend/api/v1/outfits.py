@@ -10,6 +10,7 @@ from muse_backend.api.dependencies import (
 )
 from muse_backend.schemas.common import MAX_PAGE_OFFSET, SQLITE_MAX_INTEGER, Page
 from muse_backend.schemas.outfit import OutfitCreate, OutfitDetail, OutfitSummary, OutfitUpdate
+from muse_backend.services.import_admission import InterprocessImportLock
 from muse_backend.services.outfit_previews import OutfitPreviewCoordinator
 from muse_backend.services.outfits import OutfitService
 
@@ -24,11 +25,12 @@ def create_outfit(
     storage: StorageDependency,
     database: DatabaseDependency,
 ) -> OutfitDetail:
-    return OutfitPreviewCoordinator(
-        settings=settings,
-        storage=storage,
-        database=database,
-    ).create(payload)
+    with InterprocessImportLock(settings).acquire(blocking=False):
+        return OutfitPreviewCoordinator(
+            settings=settings,
+            storage=storage,
+            database=database,
+        ).create(payload)
 
 
 @router.get("", response_model=Page[OutfitSummary])
@@ -53,11 +55,12 @@ def update_outfit(
     storage: StorageDependency,
     database: DatabaseDependency,
 ) -> OutfitDetail:
-    return OutfitPreviewCoordinator(
-        settings=settings,
-        storage=storage,
-        database=database,
-    ).update(outfit_id, payload)
+    with InterprocessImportLock(settings).acquire(blocking=False):
+        return OutfitPreviewCoordinator(
+            settings=settings,
+            storage=storage,
+            database=database,
+        ).update(outfit_id, payload)
 
 
 @router.delete("/{outfit_id}", status_code=status.HTTP_204_NO_CONTENT)

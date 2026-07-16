@@ -20,6 +20,8 @@ from muse_backend.schemas.settings import (
     CleanupResponse,
     CreateBackupRequest,
     DeleteBackupRequest,
+    DeviceActionRequest,
+    DeviceActionResponse,
     DeviceCapabilities,
     DeviceStatus,
     MaintenanceStatus,
@@ -33,6 +35,7 @@ from muse_backend.schemas.settings import (
 from muse_backend.services.application_settings import ApplicationSettingsService
 from muse_backend.services.background_processing import reconcile_temporary_imports
 from muse_backend.services.backups import BackupService
+from muse_backend.services.device_control import DeviceAction, DeviceControlService
 from muse_backend.services.import_admission import InterprocessImportLock
 from muse_backend.services.lan_address import discover_lan_interface, resolve_lan_endpoint
 from muse_backend.services.phone_upload_listener import PhoneUploadListenerProbe
@@ -128,37 +131,66 @@ def get_storage_summary(
 
 
 @router.get("/capabilities", response_model=DeviceCapabilities)
-def get_capabilities() -> DeviceCapabilities:
-    deployment_reason = "Available after the Raspberry Pi deployment milestone."
+def get_capabilities(settings: SettingsDependency) -> DeviceCapabilities:
+    device_control = DeviceControlService(settings).capability()
+    unvalidated_hardware_reason = "Requires validation on the installed display hardware."
     return DeviceCapabilities(
         wifi_management=CapabilityStatus(
             available=False,
             state="requires_deployment_configuration",
-            reason=deployment_reason,
+            reason="Network management is intentionally outside the Muse web application.",
         ),
         hardware_brightness=CapabilityStatus(
             available=False,
             state="requires_deployment_configuration",
-            reason=deployment_reason,
+            reason=unvalidated_hardware_reason,
         ),
         display_sleep=CapabilityStatus(available=True, state="available"),
         restart_application=CapabilityStatus(
-            available=False,
-            state="requires_deployment_configuration",
-            reason=deployment_reason,
+            available=device_control.available,
+            state=device_control.state,
+            reason=device_control.reason,
         ),
         reboot_device=CapabilityStatus(
-            available=False,
-            state="requires_deployment_configuration",
-            reason=deployment_reason,
+            available=device_control.available,
+            state=device_control.state,
+            reason=device_control.reason,
         ),
         shutdown_device=CapabilityStatus(
-            available=False,
-            state="requires_deployment_configuration",
-            reason=deployment_reason,
+            available=device_control.available,
+            state=device_control.state,
+            reason=device_control.reason,
         ),
         backup_restore=CapabilityStatus(available=True, state="available"),
     )
+
+
+@router.post("/device-actions/{action}", response_model=DeviceActionResponse, status_code=202)
+def schedule_device_action(
+    action: DeviceAction,
+    request_body: DeviceActionRequest,
+    settings: SettingsDependency,
+) -> DeviceActionResponse:
+    confirmations = {
+        DeviceAction.RESTART_APPLICATION: "RESTART MUSE",
+        DeviceAction.REBOOT_DEVICE: "RESTART DEVICE",
+        DeviceAction.SHUTDOWN_DEVICE: "SHUT DOWN DEVICE",
+    }
+    if request_body.confirmation != confirmations[action]:
+        raise MuseError(
+            status_code=422,
+            code="device_action_confirmation_invalid",
+            message="The device action confirmation did not match the requested action.",
+        )
+    try:
+        DeviceControlService(settings).schedule(action)
+    except RuntimeError as error:
+        raise MuseError(
+            status_code=503,
+            code="device_control_unavailable",
+            message="The constrained device action could not be scheduled.",
+        ) from error
+    return DeviceActionResponse(action=action.value)
 
 
 @router.get("/device-status", response_model=DeviceStatus)

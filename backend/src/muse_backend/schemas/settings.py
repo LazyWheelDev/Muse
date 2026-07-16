@@ -93,6 +93,15 @@ class CapabilityStatus(ApiSchema):
     reason: str | None = None
 
 
+class DeviceActionRequest(ApiSchema):
+    confirmation: Literal["RESTART MUSE", "RESTART DEVICE", "SHUT DOWN DEVICE"]
+
+
+class DeviceActionResponse(ApiSchema):
+    action: Literal["restart_application", "reboot_device", "shutdown_device"]
+    status: Literal["scheduled"] = "scheduled"
+
+
 class DeviceCapabilities(ApiSchema):
     wifi_management: CapabilityStatus
     hardware_brightness: CapabilityStatus

@@ -7,6 +7,7 @@ import {
   type CapabilityStatus,
   type CleanupResponse,
   type DeviceCapabilities,
+  type DeviceActionResponse,
   type DeviceStatus,
   type NetworkStatus,
   type MaintenanceStatus,
@@ -197,6 +198,18 @@ export function decodeCapabilities(value: unknown): DeviceCapabilities {
     rebootDevice: decodeCapability(source.reboot_device, 'reboot_device'),
     shutdownDevice: decodeCapability(source.shutdown_device, 'shutdown_device'),
     backupRestore: decodeCapability(source.backup_restore, 'backup_restore'),
+  };
+}
+
+export function decodeDeviceAction(value: unknown): DeviceActionResponse {
+  const source = record(value, 'device action');
+  return {
+    action: oneOf(
+      source.action,
+      ['restart_application', 'reboot_device', 'shutdown_device'],
+      'action',
+    ),
+    status: oneOf(source.status, ['scheduled'], 'status'),
   };
 }
 

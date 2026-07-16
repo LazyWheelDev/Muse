@@ -17,6 +17,11 @@ class Environment(StrEnum):
     PRODUCTION = "production"
 
 
+class PlatformCapabilityMode(StrEnum):
+    DISABLED = "disabled"
+    RASPBERRY_PI = "raspberry_pi"
+
+
 def _default_data_root() -> Path:
     return REPOSITORY_ROOT / "local-data"
 
@@ -111,6 +116,10 @@ class Settings(BaseSettings):
     phone_upload_rate_limit_requests: int = Field(default=60, ge=5, le=1000)
     phone_upload_rate_limit_window_seconds: float = Field(default=60.0, ge=1.0, le=3600.0)
     phone_upload_rate_limit_clients: int = Field(default=256, ge=16, le=4096)
+    platform_capability_mode: PlatformCapabilityMode = PlatformCapabilityMode.DISABLED
+    device_control_helper_path: Path = Path("/usr/libexec/muse-device-control")
+    device_control_sudo_path: Path = Path("/usr/bin/sudo")
+    device_control_timeout_seconds: float = Field(default=5.0, ge=1.0, le=15.0)
 
     @field_validator("log_level")
     @classmethod
@@ -238,6 +247,10 @@ class Settings(BaseSettings):
         self.phone_upload_frontend_build_path = self._resolve_project_path(
             self.phone_upload_frontend_build_path
         )
+        if not self.device_control_helper_path.is_absolute():
+            raise ValueError("device_control_helper_path must be absolute")
+        if not self.device_control_sudo_path.is_absolute():
+            raise ValueError("device_control_sudo_path must be absolute")
 
         for path in (
             self.database_path,
@@ -392,6 +405,10 @@ class Settings(BaseSettings):
                 )
             )
         )
+
+    @property
+    def device_action_marker_path(self) -> Path:
+        return self.lock_root / "device-action.pending"
 
     @property
     def import_lock_path(self) -> Path:

@@ -7,7 +7,8 @@ import { ActionButton, NavigationButton } from '../components/ui/Buttons';
 import { DialogActions, ModalDialog } from '../components/ui/ModalDialog';
 import { PageHeader } from '../components/ui/PageHeader';
 import { useDisplayPreferences } from '../features/settings/displayPreferencesContext';
-import { useCapabilities } from '../features/settings/queries';
+import type { DeviceAction } from '../features/settings/model';
+import { useCapabilities, useScheduleDeviceAction } from '../features/settings/queries';
 import styles from './SettingsPage.module.css';
 
 const cards: ReadonlyArray<{
@@ -56,11 +57,34 @@ const cards: ReadonlyArray<{
 
 export function SettingsPage() {
   const [powerOpen, setPowerOpen] = useState(false);
+  const [pendingAction, setPendingAction] = useState<DeviceAction | null>(null);
+  const [scheduledMessage, setScheduledMessage] = useState<string | null>(null);
   const { sleepDisplay } = useDisplayPreferences();
   const capabilities = useCapabilities();
+  const scheduleAction = useScheduleDeviceAction();
   const reason =
     capabilities.data?.restartApplication.reason ??
     'This action requires Raspberry Pi deployment configuration.';
+  const actionDetails: Record<DeviceAction, { label: string; description: string }> = {
+    restart_application: {
+      label: 'Restart Muse',
+      description: 'Restart Muse services now? Active work must finish before restart begins.',
+    },
+    reboot_device: {
+      label: 'Restart Device',
+      description: 'Restart the Raspberry Pi now? Muse will return after the device boots.',
+    },
+    shutdown_device: {
+      label: 'Shut Down',
+      description: 'Shut down the Raspberry Pi now? Remove power only after the screen turns off.',
+    },
+  };
+
+  function chooseAction(action: DeviceAction) {
+    scheduleAction.reset();
+    setPowerOpen(false);
+    setPendingAction(action);
+  }
 
   return (
     <div className={styles.page}>
@@ -114,13 +138,25 @@ export function SettingsPage() {
             >
               Sleep Display
             </ActionButton>
-            <ActionButton disabled title={reason}>
+            <ActionButton
+              disabled={!capabilities.data?.restartApplication.available}
+              title={capabilities.data?.restartApplication.reason ?? undefined}
+              onClick={() => chooseAction('restart_application')}
+            >
               Restart Muse
             </ActionButton>
-            <ActionButton disabled title={reason}>
+            <ActionButton
+              disabled={!capabilities.data?.rebootDevice.available}
+              title={capabilities.data?.rebootDevice.reason ?? undefined}
+              onClick={() => chooseAction('reboot_device')}
+            >
               Restart Device
             </ActionButton>
-            <ActionButton disabled title={reason}>
+            <ActionButton
+              disabled={!capabilities.data?.shutdownDevice.available}
+              title={capabilities.data?.shutdownDevice.reason ?? undefined}
+              onClick={() => chooseAction('shutdown_device')}
+            >
               Shut Down
             </ActionButton>
           </div>
@@ -134,6 +170,43 @@ export function SettingsPage() {
           </DialogActions>
         </ModalDialog>
       ) : null}
+      {pendingAction !== null ? (
+        <ModalDialog
+          title={actionDetails[pendingAction].label}
+          description={actionDetails[pendingAction].description}
+          onClose={() => {
+            if (!scheduleAction.isPending) setPendingAction(null);
+          }}
+        >
+          {scheduleAction.isError ? (
+            <p role="alert">The device action could not be scheduled. No power action was taken.</p>
+          ) : null}
+          <DialogActions>
+            <ActionButton
+              data-autofocus
+              disabled={scheduleAction.isPending}
+              onClick={() => setPendingAction(null)}
+            >
+              Cancel
+            </ActionButton>
+            <ActionButton
+              disabled={scheduleAction.isPending}
+              onClick={() => {
+                const action = pendingAction;
+                scheduleAction.mutate(action, {
+                  onSuccess: () => {
+                    setScheduledMessage(`${actionDetails[action].label} scheduled.`);
+                    setPendingAction(null);
+                  },
+                });
+              }}
+            >
+              {scheduleAction.isPending ? 'Scheduling…' : actionDetails[pendingAction].label}
+            </ActionButton>
+          </DialogActions>
+        </ModalDialog>
+      ) : null}
+      {scheduledMessage !== null ? <p role="status">{scheduledMessage}</p> : null}
     </div>
   );
 }
