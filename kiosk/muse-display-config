@@ -1,0 +1,295 @@
+#!/usr/bin/env python3
+"""Opt-in, reversible runtime display preparation after physical discovery."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+SAFE_NAME = re.compile(r"^[A-Za-z0-9_.:+ -]{1,120}$")
+
+
+class DisplayConfigError(RuntimeError):
+    pass
+
+
+def run(arguments: list[str]) -> str:
+    result = subprocess.run(
+        arguments,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+        shell=False,
+    )
+    return result.stdout[: 64 * 1024]
+
+
+def command_path(name: str) -> str:
+    path = shutil.which(name)
+    if path is None:
+        raise DisplayConfigError(f"required session tool is unavailable: {name}")
+    return path
+
+
+def state_path() -> Path:
+    configured = os.environ.get("MUSE_DISPLAY_STATE")
+    if configured:
+        path = Path(configured).resolve()
+    else:
+        user = os.environ.get("USER", "")
+        if not re.fullmatch(r"[a-z_][a-z0-9_-]{0,31}", user):
+            raise DisplayConfigError("current desktop user could not be identified")
+        path = Path(f"/var/lib/muse-kiosk/{user}/display-config-state.json")
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    return path
+
+
+def load_state() -> dict[str, Any]:
+    path = state_path()
+    if not path.exists():
+        return {}
+    if path.is_symlink() or not path.is_file() or path.stat().st_size > 64 * 1024:
+        raise DisplayConfigError("display configuration state is unsafe")
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise DisplayConfigError("display configuration state is invalid") from error
+    if not isinstance(value, dict):
+        raise DisplayConfigError("display configuration state is invalid")
+    return value
+
+
+def save_state(state: dict[str, Any]) -> None:
+    path = state_path()
+    if path.exists():
+        timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+        backup = path.with_name(f"{path.name}.backup-{timestamp}")
+        if not backup.exists():
+            shutil.copyfile(path, backup, follow_symlinks=False)
+            backup.chmod(0o600)
+            print(f"Created state backup: {backup}")
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(state, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+    temporary.chmod(0o600)
+    os.replace(temporary, path)
+
+
+def require_confirmation(args: argparse.Namespace, word: str) -> None:
+    if not args.apply and not args.revert:
+        return
+    if args.confirm != word:
+        raise DisplayConfigError(f"operation requires --confirm {word}")
+
+
+def xrandr_state(output: str) -> tuple[str, str]:
+    tool = command_path("xrandr")
+    query = run([tool, "--query"])
+    if not re.search(rf"^{re.escape(output)} connected\b", query, re.MULTILINE):
+        raise DisplayConfigError("selected X11 output is not connected")
+    block = query.split(f"{output} connected", 1)[1].split("\n", 1)[1]
+    current = re.search(r"^\s+(\d+x\d+)\s+[^\n]*\*", block, re.MULTILINE)
+    if current is None:
+        raise DisplayConfigError("current X11 mode could not be determined")
+    return tool, current.group(1)
+
+
+def resolution(args: argparse.Namespace, state: dict[str, Any]) -> None:
+    if args.mode != "1280x800" or not SAFE_NAME.fullmatch(args.output):
+        raise DisplayConfigError("resolution helper accepts one validated output and 1280x800 only")
+    if os.environ.get("WAYLAND_DISPLAY"):
+        tool = command_path("wlr-randr")
+        query = run([tool])
+        if args.output not in query or "1280x800" not in query:
+            raise DisplayConfigError("1280x800 was not advertised by the selected Wayland output")
+        current = re.search(r"(\d+x\d+)[^\n]*current", query)
+        previous = current.group(1) if current else None
+        planned = [tool, "--output", args.output, "--mode", "1280x800"]
+    elif os.environ.get("DISPLAY"):
+        tool, previous = xrandr_state(args.output)
+        query = run([tool, "--query"])
+        if not re.search(r"^\s+1280x800\b", query, re.MULTILINE):
+            raise DisplayConfigError("1280x800 was not advertised by X11")
+        planned = [tool, "--output", args.output, "--mode", "1280x800"]
+    else:
+        raise DisplayConfigError(
+            "run from the detected graphical session; no display stack is active"
+        )
+    if args.revert:
+        saved = state.get("resolution")
+        if (
+            not isinstance(saved, dict)
+            or saved.get("output") != args.output
+            or not isinstance(saved.get("previous"), str)
+        ):
+            raise DisplayConfigError("no reversible resolution state exists for this output")
+        planned = [tool, "--output", args.output, "--mode", saved["previous"]]
+    print("Planned command:", " ".join(planned))
+    if not args.apply and not args.revert:
+        return
+    run(planned)
+    expected = planned[-1]
+    verified = run([tool, "--query"] if tool.endswith("xrandr") else [tool])
+    if expected not in verified:
+        raise DisplayConfigError("resolution change could not be verified")
+    if args.apply:
+        state["resolution"] = {"output": args.output, "previous": previous, "applied": "1280x800"}
+    else:
+        state.pop("resolution", None)
+    save_state(state)
+
+
+def touch(args: argparse.Namespace, state: dict[str, Any]) -> None:
+    if os.environ.get("WAYLAND_DISPLAY"):
+        raise DisplayConfigError(
+            "Wayland touch mapping is compositor-specific; use discovery output before selecting a validated mechanism"
+        )
+    if not os.environ.get("DISPLAY"):
+        raise DisplayConfigError("X11 touch mapping requires an active DISPLAY")
+    if not SAFE_NAME.fullmatch(args.touch_device) or not SAFE_NAME.fullmatch(args.output):
+        raise DisplayConfigError("touch device or output name is invalid")
+    xinput = command_path("xinput")
+    names = run([xinput, "list", "--name-only"]).splitlines()
+    if args.touch_device not in names:
+        raise DisplayConfigError("selected touch device was not detected")
+    xrandr_state(args.output)
+    properties = run([xinput, "list-props", args.touch_device])
+    matrix = re.search(r"Coordinate Transformation Matrix[^:]*:\s*([-0-9., ]+)", properties)
+    if matrix is None:
+        raise DisplayConfigError("touch transformation matrix is unavailable")
+    previous = [value.strip() for value in matrix.group(1).split(",")]
+    if len(previous) != 9 or any(not re.fullmatch(r"-?\d+(?:\.\d+)?", value) for value in previous):
+        raise DisplayConfigError("touch transformation matrix is invalid")
+    planned = [xinput, "map-to-output", args.touch_device, args.output]
+    if args.revert:
+        saved = state.get("touch")
+        if (
+            not isinstance(saved, dict)
+            or saved.get("device") != args.touch_device
+            or not isinstance(saved.get("matrix"), list)
+        ):
+            raise DisplayConfigError("no reversible touch mapping state exists")
+        planned = [
+            xinput,
+            "set-prop",
+            args.touch_device,
+            "Coordinate Transformation Matrix",
+            *saved["matrix"],
+        ]
+    print("Planned command:", " ".join(planned))
+    if not args.apply and not args.revert:
+        return
+    run(planned)
+    if args.apply:
+        state["touch"] = {"device": args.touch_device, "output": args.output, "matrix": previous}
+    else:
+        state.pop("touch", None)
+    save_state(state)
+
+
+def blanking(args: argparse.Namespace, state: dict[str, Any]) -> None:
+    if os.environ.get("WAYLAND_DISPLAY"):
+        raise DisplayConfigError(
+            "Wayland blanking is compositor-specific; do not edit compositor files until discovery is reviewed"
+        )
+    if not os.environ.get("DISPLAY"):
+        raise DisplayConfigError("X11 blanking control requires an active DISPLAY")
+    xset = command_path("xset")
+    query = run([xset, "q"])
+    timeout = re.search(r"timeout:\s+(\d+)", query)
+    if timeout is None:
+        raise DisplayConfigError("current X11 blanking timeout could not be read")
+    previous = {"timeout": int(timeout.group(1)), "dpms": "DPMS is Enabled" in query}
+    planned = [[xset, "s", "off"], [xset, "-dpms"]]
+    if args.revert:
+        saved = state.get("blanking")
+        if (
+            not isinstance(saved, dict)
+            or not isinstance(saved.get("timeout"), int)
+            or not isinstance(saved.get("dpms"), bool)
+        ):
+            raise DisplayConfigError("no reversible blanking state exists")
+        planned = [
+            [xset, "s", str(saved["timeout"])],
+            [xset, "+dpms" if saved["dpms"] else "-dpms"],
+        ]
+    print("Planned commands:", "; ".join(" ".join(item) for item in planned))
+    if not args.apply and not args.revert:
+        return
+    for item in planned:
+        run(item)
+    verified = run([xset, "q"])
+    if args.apply and ("timeout:  0" not in verified and "timeout: 0" not in verified):
+        raise DisplayConfigError("X11 blanking change could not be verified")
+    if args.apply:
+        state["blanking"] = previous
+    else:
+        state.pop("blanking", None)
+    save_state(state)
+
+
+def cursor(args: argparse.Namespace, state: dict[str, Any]) -> None:
+    profile = state_path().parent / "cursor-hide-enabled"
+    planned = f"{'create' if args.apply else 'remove' if args.revert else 'would create'} {profile}"
+    print("Planned change:", planned)
+    if not args.apply and not args.revert:
+        return
+    if args.apply:
+        command_path("unclutter")
+        profile.write_text("enabled\n", encoding="utf-8")
+        profile.chmod(0o600)
+        state["cursor"] = {"enabled": True}
+    else:
+        profile.unlink(missing_ok=True)
+        state.pop("cursor", None)
+    save_state(state)
+
+
+def parser() -> argparse.ArgumentParser:
+    result = argparse.ArgumentParser(description=__doc__)
+    result.add_argument("action", choices=("resolution", "touch", "blanking", "cursor"))
+    mode = result.add_mutually_exclusive_group()
+    mode.add_argument("--apply", action="store_true")
+    mode.add_argument("--revert", action="store_true")
+    result.add_argument("--confirm")
+    result.add_argument(
+        "--dry-run", action="store_true", help="show the exact change without applying it"
+    )
+    result.add_argument("--output", default="")
+    result.add_argument("--mode", default="1280x800")
+    result.add_argument("--touch-device", default="")
+    return result
+
+
+def main() -> int:
+    args = parser().parse_args()
+    word = "REVERT MUSE DISPLAY" if args.revert else "APPLY MUSE DISPLAY"
+    try:
+        if args.dry_run and (args.apply or args.revert):
+            raise DisplayConfigError("--dry-run cannot be combined with --apply or --revert")
+        require_confirmation(args, word)
+        state = load_state()
+        if args.action == "resolution":
+            resolution(args, state)
+        elif args.action == "touch":
+            touch(args, state)
+        elif args.action == "blanking":
+            blanking(args, state)
+        else:
+            cursor(args, state)
+    except (DisplayConfigError, OSError, subprocess.SubprocessError) as error:
+        print(f"Display configuration refused: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

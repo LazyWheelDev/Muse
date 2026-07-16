@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+[[ "${EUID}" -eq 0 ]] || {
+  printf 'Muse device control requires root.\n' >&2
+  exit 1
+}
+[[ "$#" -eq 1 ]] || {
+  printf 'Exactly one fixed Muse device action is required.\n' >&2
+  exit 2
+}
+
+schedule() {
+  local internal_action="$1"
+  /usr/bin/systemd-run \
+    --quiet \
+    --collect \
+    --unit=muse-device-action \
+    --on-active=2s \
+    --timer-property=AccuracySec=250ms \
+    /usr/libexec/muse-device-control "$internal_action"
+}
+
+case "$1" in
+  probe)
+    printf 'muse-device-control-ready\n'
+    ;;
+  restart_application)
+    /usr/bin/logger -t muse-device-control -- 'Muse application restart requested by constrained helper'
+    schedule internal-restart-application
+    ;;
+  reboot_device)
+    /usr/bin/logger -t muse-device-control -- 'Muse device reboot requested by constrained helper'
+    schedule internal-reboot-device
+    ;;
+  shutdown_device)
+    /usr/bin/logger -t muse-device-control -- 'Muse device shutdown requested by constrained helper'
+    schedule internal-shutdown-device
+    ;;
+  internal-restart-application)
+    /usr/bin/systemctl stop muse-phone-upload.service muse-main.service
+    /usr/bin/rm -f -- /var/lib/muse/.locks/device-action.pending
+    /usr/bin/systemctl start muse-main.service
+    /usr/bin/systemctl start muse-network-refresh.service
+    ;;
+  internal-reboot-device)
+    /usr/bin/systemctl reboot
+    ;;
+  internal-shutdown-device)
+    /usr/bin/systemctl poweroff
+    ;;
+  *)
+    printf 'Unsupported Muse device action.\n' >&2
+    exit 2
+    ;;
+esac

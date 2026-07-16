@@ -1,0 +1,21 @@
+[Unit]
+Description=Create a verified Muse safety backup before update
+Requires=muse-main.service
+After=muse-main.service
+
+[Service]
+Type=oneshot
+User=muse
+Group=muse
+EnvironmentFile=/etc/muse/muse.env
+EnvironmentFile=-/run/muse/network.env
+ExecStart=/opt/muse/current/kiosk/muse-backend create-backup
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX
+ReadWritePaths=/var/lib/muse /run/muse
+TimeoutStartSec=30min

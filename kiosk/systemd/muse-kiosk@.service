@@ -1,0 +1,34 @@
+[Unit]
+Description=Muse Chromium kiosk for desktop user %i
+Requires=muse-main.service
+After=muse-main.service graphical.target
+StartLimitIntervalSec=5min
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=%i
+PAMName=login
+Environment=MUSE_KIOSK_PROFILE=/var/lib/muse-kiosk/%i/chromium
+ExecStart=/opt/muse/current/kiosk/launch-kiosk.sh
+Restart=on-failure
+RestartSec=10s
+TimeoutStartSec=90s
+TimeoutStopSec=30s
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+ReadWritePaths=/var/lib/muse-kiosk/%i /run/user
+
+[Install]
+WantedBy=graphical.target

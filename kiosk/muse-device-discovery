@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+exec /opt/muse/current/.venv/bin/python /opt/muse/current/kiosk/muse-doctor --full "$@"

@@ -1,0 +1,446 @@
+#!/usr/bin/env python3
+"""Sanitized Muse appliance diagnostics with human and JSON output."""
+
+from __future__ import annotations
+
+import argparse
+import contextlib
+import hashlib
+import json
+import os
+import platform
+import pwd
+import re
+import shutil
+import sqlite3
+import stat
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+from pathlib import Path
+from typing import Any
+
+MAX_OUTPUT = 16 * 1024
+
+
+def command(arguments: list[str], timeout: float = 5) -> tuple[int, str]:
+    try:
+        result = subprocess.run(
+            arguments,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            shell=False,
+            env={"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LANG": "C"},
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return 127, "unavailable"
+    return result.returncode, result.stdout[:MAX_OUTPUT].strip()
+
+
+def http_status(url: str) -> int | None:
+    try:
+        with urllib.request.urlopen(url, timeout=2) as response:
+            return response.status
+    except urllib.error.HTTPError as error:
+        return error.code
+    except (OSError, ValueError):
+        return None
+
+
+def safe_json(path: Path, limit: int = 2 * 1024 * 1024) -> dict[str, Any] | None:
+    try:
+        if path.is_symlink() or not path.is_file() or path.stat().st_size > limit:
+            return None
+        value = json.loads(path.read_text(encoding="utf-8"))
+        return value if isinstance(value, dict) else None
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def state_file(name: str) -> str | None:
+    path = Path("/opt/muse/state") / name
+    try:
+        if path.is_symlink() or not path.is_file() or path.stat().st_size > 256:
+            return None
+        value = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    return value if re.fullmatch(r"[A-Za-z0-9_.-]{1,100}", value) else None
+
+
+def services() -> dict[str, str]:
+    names = (
+        "muse-prepare.service",
+        "muse-main.service",
+        "muse-phone-upload.service",
+        "muse-network-refresh.timer",
+    )
+    result: dict[str, str] = {}
+    for name in names:
+        code, output = command(["/usr/bin/systemctl", "is-active", name])
+        result[name] = output if code == 0 else (output or "inactive")
+    kiosk_code, kiosk_output = command(
+        [
+            "/usr/bin/systemctl",
+            "list-units",
+            "--state=running",
+            "muse-kiosk@*.service",
+            "--no-legend",
+        ]
+    )
+    result["muse-kiosk"] = (
+        "active" if kiosk_code == 0 and "muse-kiosk@" in kiosk_output else "inactive"
+    )
+    return result
+
+
+def ports() -> dict[str, list[str]]:
+    code, output = command(["/usr/bin/ss", "-H", "-ltn"])
+    found = {"8000": [], "8787": []}
+    if code != 0:
+        return found
+    for line in output.splitlines():
+        columns = line.split()
+        if len(columns) < 4:
+            continue
+        local = columns[3]
+        for port in found:
+            if local.endswith(f":{port}"):
+                host = local.rsplit(":", 1)[0].strip("[]")
+                if host not in found[port]:
+                    found[port].append(host)
+    for values in found.values():
+        values.sort()
+    return found
+
+
+def database_checks(path: Path) -> dict[str, Any]:
+    try:
+        with sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=3) as connection:
+            quick = connection.execute("PRAGMA quick_check").fetchall()
+            foreign = connection.execute("PRAGMA foreign_key_check").fetchall()
+        return {"quick_check": quick == [("ok",)], "foreign_key_check": len(foreign) == 0}
+    except (OSError, sqlite3.Error):
+        return {"quick_check": False, "foreign_key_check": False}
+
+
+def tree_size(path: Path) -> int | None:
+    total = 0
+    try:
+        for root, directories, files in os.walk(path, followlinks=False):
+            directories[:] = [name for name in directories if not (Path(root) / name).is_symlink()]
+            for name in files:
+                candidate = Path(root) / name
+                if not candidate.is_symlink():
+                    total += candidate.stat().st_size
+        return total
+    except OSError:
+        return None
+
+
+def data_permissions(path: Path) -> dict[str, Any]:
+    try:
+        expected_uid = pwd.getpwnam("muse").pw_uid
+    except KeyError:
+        expected_uid = None
+    try:
+        metadata = path.stat(follow_symlinks=False)
+    except OSError:
+        return {
+            "exists": False,
+            "owner_uid": None,
+            "expected_muse_uid": expected_uid,
+            "mode": None,
+            "private": False,
+        }
+    mode = stat.S_IMODE(metadata.st_mode)
+    return {
+        "exists": stat.S_ISDIR(metadata.st_mode),
+        "owner_uid": metadata.st_uid,
+        "expected_muse_uid": expected_uid,
+        "mode": f"{mode:04o}",
+        "private": expected_uid is not None
+        and metadata.st_uid == expected_uid
+        and mode & 0o077 == 0,
+    }
+
+
+def latest_backup(path: Path) -> dict[str, Any] | None:
+    try:
+        backups = [
+            candidate
+            for candidate in path.glob("*.muse-backup.zip")
+            if candidate.is_file() and not candidate.is_symlink()
+        ]
+        if not backups:
+            return None
+        selected = max(backups, key=lambda item: item.stat().st_mtime)
+        return {
+            "size_bytes": selected.stat().st_size,
+            "modified_epoch": int(selected.stat().st_mtime),
+        }
+    except OSError:
+        return None
+
+
+def thermal() -> dict[str, Any]:
+    temperature: float | None = None
+    with contextlib.suppress(OSError, ValueError):
+        temperature = round(
+            float(Path("/sys/class/thermal/thermal_zone0/temp").read_text().strip()) / 1000, 1
+        )
+    code, output = command(["/usr/bin/vcgencmd", "get_throttled"])
+    throttled = (
+        output if code == 0 and re.fullmatch(r"throttled=0x[0-9a-fA-F]+", output) else "unavailable"
+    )
+    return {"temperature_celsius": temperature, "throttled": throttled}
+
+
+def display() -> dict[str, Any]:
+    connectors: list[dict[str, Any]] = []
+    for status_path in sorted(Path("/sys/class/drm").glob("card*-*/status")):
+        try:
+            status = status_path.read_text(encoding="utf-8").strip()
+            modes_path = status_path.with_name("modes")
+            modes = (
+                modes_path.read_text(encoding="utf-8").splitlines()[:50]
+                if modes_path.is_file()
+                else []
+            )
+            edid_path = status_path.with_name("edid")
+            edid = edid_path.read_bytes()[:256] if edid_path.is_file() else b""
+            dimensions = None
+            if len(edid) >= 23 and edid[:8] == b"\x00\xff\xff\xff\xff\xff\xff\x00":
+                dimensions = {
+                    "width_mm": edid[21] * 10 or None,
+                    "height_mm": edid[22] * 10 or None,
+                }
+            connectors.append(
+                {
+                    "connector": status_path.parent.name,
+                    "status": status,
+                    "enabled": _bounded_text(status_path.with_name("enabled")),
+                    "dpms": _bounded_text(status_path.with_name("dpms")),
+                    "modes": modes,
+                    "edid_sha256": hashlib.sha256(edid).hexdigest() if edid else None,
+                    "physical_dimensions": dimensions,
+                }
+            )
+        except OSError:
+            continue
+    framebuffers: list[dict[str, Any]] = []
+    for framebuffer in sorted(Path("/sys/class/graphics").glob("fb*")):
+        framebuffers.append(
+            {
+                "device": framebuffer.name,
+                "virtual_size": _bounded_text(framebuffer / "virtual_size"),
+                "mode": _bounded_text(framebuffer / "mode"),
+                "modes": (_bounded_text(framebuffer / "modes") or "").splitlines()[:25],
+                "rotation": _bounded_text(framebuffer / "rotate"),
+            }
+        )
+    return {"connectors": connectors, "framebuffers": framebuffers}
+
+
+def _bounded_text(path: Path, limit: int = 4096) -> str | None:
+    try:
+        if path.is_symlink() or not path.is_file() or path.stat().st_size > limit:
+            return None
+        return path.read_text(encoding="utf-8", errors="replace").strip()
+    except OSError:
+        return None
+
+
+def display_tool_state() -> dict[str, str]:
+    results: dict[str, str] = {}
+    search_path = "/usr/sbin:/usr/bin:/sbin:/bin"
+    for name, arguments in (
+        ("kmsprint", []),
+        ("wlr-randr", []),
+        ("xrandr", ["--current", "--verbose"]),
+    ):
+        executable = shutil.which(name, path=search_path)
+        if executable is None:
+            continue
+        code, output = command([executable, *arguments], timeout=10)
+        if code == 0 and output:
+            results[name] = output
+    return results
+
+
+def touch_devices() -> list[str]:
+    try:
+        raw = Path("/proc/bus/input/devices").read_text(encoding="utf-8", errors="replace")[
+            : 256 * 1024
+        ]
+    except OSError:
+        return []
+    names = re.findall(r'^N: Name="([^"\n]{1,120})"$', raw, flags=re.MULTILINE)
+    return sorted({name for name in names if re.search(r"touch|digitizer", name, re.IGNORECASE)})
+
+
+def chromium() -> dict[str, Any]:
+    executable = next(
+        (
+            path
+            for path in (Path("/usr/bin/chromium"), Path("/usr/bin/chromium-browser"))
+            if path.is_file()
+        ),
+        None,
+    )
+    version = None
+    if executable is not None:
+        code, output = command([str(executable), "--version"])
+        if code == 0:
+            version = output[:160]
+    code, output = command(["/usr/bin/pgrep", "-a", "chromium"])
+    return {"version": version, "running": code == 0 and bool(output)}
+
+
+def full_discovery() -> dict[str, Any]:
+    os_release = "unavailable"
+    with contextlib.suppress(OSError):
+        os_release = Path("/etc/os-release").read_text(encoding="utf-8", errors="replace")[:4096]
+    model = "unavailable"
+    with contextlib.suppress(OSError):
+        model = (
+            Path("/proc/device-tree/model")
+            .read_bytes()[:256]
+            .replace(b"\0", b"")
+            .decode("utf-8", "replace")
+        )
+    sessions = command(["/usr/bin/loginctl", "list-sessions", "--no-legend"])[1]
+    return {
+        "os_release": os_release,
+        "kernel": platform.release(),
+        "model": model,
+        "memory": command(["/usr/bin/free", "-b"])[1],
+        "storage": command(["/usr/bin/df", "-B1", "/var/lib/muse"])[1],
+        "sessions": sessions,
+        "wayland_sockets": sorted(
+            path.name for path in Path("/run/user").glob("*/wayland-*") if path.is_socket()
+        ),
+        "x11_socket_present": Path("/tmp/.X11-unix/X0").is_socket(),
+        "display": display(),
+        "touch_devices": touch_devices(),
+        "touch_mapping": "requires session-specific compositor or xinput inspection",
+        "rotation_scaling": "requires session-specific compositor inspection",
+        "display_tool_state": display_tool_state(),
+        "network_default_routes": command(["/usr/sbin/ip", "-j", "route", "show", "default"])[1],
+        "network_global_ipv4": command(
+            ["/usr/sbin/ip", "-j", "-4", "address", "show", "scope", "global"]
+        )[1],
+    }
+
+
+def report(include_full: bool) -> tuple[dict[str, Any], list[str], list[str]]:
+    release = safe_json(Path("/opt/muse/current/release-manifest.json")) or {}
+    bound = ports()
+    data_root = Path("/var/lib/muse")
+    disk = shutil.disk_usage(data_root) if data_root.exists() else None
+    service_states = services()
+    db = database_checks(data_root / "muse.sqlite3")
+    permissions = data_permissions(data_root)
+    failures: list[str] = []
+    warnings: list[str] = []
+    if not release.get("release_id") or not release.get("git_commit"):
+        failures.append("active release manifest is unavailable")
+    if service_states.get("muse-main.service") != "active":
+        failures.append("main service is not active")
+    if http_status("http://127.0.0.1:8000/api/v1/readiness") != 200:
+        failures.append("main readiness failed")
+    if bound["8000"] != ["127.0.0.1"]:
+        failures.append("main port is not loopback-only")
+    if not db["quick_check"] or not db["foreign_key_check"]:
+        failures.append("database integrity failed")
+    if not permissions["private"]:
+        failures.append("data-root ownership or permissions are unsafe")
+    if service_states.get("muse-phone-upload.service") != "active":
+        warnings.append("phone listener is inactive or no private network is available")
+    chrome = chromium()
+    if not chrome["running"]:
+        warnings.append("Chromium kiosk is not running")
+    journal_code, journal_output = command(
+        [
+            "/usr/bin/journalctl",
+            "--priority=err",
+            "--since=-1h",
+            "--no-pager",
+            "--output=short",
+            "-u",
+            "muse-main.service",
+            "-u",
+            "muse-phone-upload.service",
+        ]
+    )
+    recent_failure_lines = 0 if journal_code != 0 else len(journal_output.splitlines())
+    result: dict[str, Any] = {
+        "active_release": release.get("release_id"),
+        "git_commit": release.get("git_commit"),
+        "previous_release": state_file("previous-release"),
+        "services": service_states,
+        "readiness_http_status": http_status("http://127.0.0.1:8000/api/v1/readiness"),
+        "health_http_status": http_status("http://127.0.0.1:8000/api/v1/health"),
+        "bound_addresses": bound,
+        "main_api_loopback_only": bound["8000"] == ["127.0.0.1"],
+        "chromium": chrome,
+        "python_version": platform.python_version(),
+        "display": display(),
+        "touch_devices": touch_devices(),
+        "database": db,
+        "data_root": permissions,
+        "disk_free_bytes": None if disk is None else disk.free,
+        "data_size_bytes": tree_size(data_root),
+        "latest_backup": latest_backup(data_root / "backups"),
+        "thermal": thermal(),
+        "recent_service_error_lines": recent_failure_lines,
+        "mdns_service": command(["/usr/bin/systemctl", "is-active", "avahi-daemon.service"])[1],
+        "failures": failures,
+        "warnings": warnings,
+    }
+    if include_full:
+        result["discovery"] = full_discovery()
+    return result, failures, warnings
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--json", action="store_true")
+    parser.add_argument("--full", action="store_true")
+    parser.add_argument("--output", type=Path)
+    args = parser.parse_args()
+    result, failures, warnings = report(args.full)
+    rendered = json.dumps(result, indent=2, sort_keys=True)
+    if args.output is not None:
+        output = args.output.resolve()
+        if output.exists() and output.is_symlink():
+            print("Refusing to write diagnostics through a symbolic link.", file=sys.stderr)
+            return 2
+        temporary = output.with_suffix(output.suffix + ".tmp")
+        temporary.write_text(rendered + "\n", encoding="utf-8")
+        os.replace(temporary, output)
+    if args.json or args.full:
+        print(rendered)
+    else:
+        print(
+            f"Muse release: {result['active_release'] or 'unavailable'} ({result['git_commit'] or 'unknown'})"
+        )
+        print(f"Previous release: {result['previous_release'] or 'none'}")
+        for name, value in result["services"].items():
+            print(f"Service {name}: {value}")
+        print(f"Main loopback-only: {result['main_api_loopback_only']}")
+        print(
+            f"Database quick/FK: {result['database']['quick_check']}/{result['database']['foreign_key_check']}"
+        )
+        for message in warnings:
+            print(f"WARN: {message}")
+        for message in failures:
+            print(f"FAIL: {message}")
+    return 1 if failures else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

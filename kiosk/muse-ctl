@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+command_name="${1:-}"
+shift || true
+
+kiosk_user=""
+if [[ -f /opt/muse/state/kiosk-user && ! -L /opt/muse/state/kiosk-user ]]; then
+  kiosk_user="$(tr -d '\n' </opt/muse/state/kiosk-user)"
+fi
+[[ "$kiosk_user" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || kiosk_user=""
+
+require_root() {
+  [[ "${EUID}" -eq 0 ]] || {
+    printf 'This Muse control command requires sudo.\n' >&2
+    exit 1
+  }
+}
+
+case "$command_name" in
+  status)
+    systemctl --no-pager --full status muse-prepare.service muse-main.service muse-phone-upload.service muse-network-refresh.timer || true
+    /opt/muse/current/.venv/bin/python /opt/muse/current/kiosk/muse-doctor
+    ;;
+  start)
+    require_root
+    systemctl restart muse-prepare.service
+    systemctl start muse-main.service muse-network-refresh.timer muse-network-refresh.service
+    [[ -z "$kiosk_user" ]] || systemctl start "muse-kiosk@${kiosk_user}.service"
+    ;;
+  stop)
+    require_root
+    [[ -z "$kiosk_user" ]] || systemctl stop "muse-kiosk@${kiosk_user}.service"
+    systemctl stop muse-phone-upload.service muse-main.service
+    ;;
+  restart)
+    require_root
+    "$0" stop
+    "$0" start
+    ;;
+  logs)
+    selection="${1:-all}"
+    case "$selection" in
+      main) units=(-u muse-main.service) ;;
+      phone) units=(-u muse-phone-upload.service -u muse-network-refresh.service) ;;
+      kiosk)
+        [[ -n "$kiosk_user" ]] || {
+          printf 'No kiosk user is recorded.\n' >&2
+          exit 1
+        }
+        units=(-u "muse-kiosk@${kiosk_user}.service")
+        ;;
+      all) units=(-u muse-prepare.service -u muse-main.service -u muse-phone-upload.service -u muse-network-refresh.service) ;;
+      *)
+        printf 'Logs accepts main, phone, kiosk, or all.\n' >&2
+        exit 2
+        ;;
+    esac
+    journalctl --no-pager --output=short-iso "${units[@]}" -n 200
+    ;;
+  readiness)
+    /opt/muse/current/kiosk/wait-readiness.sh --timeout 5
+    ;;
+  backup)
+    require_root
+    systemctl start muse-update-backup.service
+    ;;
+  backup-verify)
+    require_root
+    systemd-run --quiet --wait --collect --unit=muse-backup-verify \
+      --property=User=muse \
+      --property=Group=muse \
+      --property=EnvironmentFile=/etc/muse/muse.env \
+      --property=EnvironmentFile=-/run/muse/network.env \
+      /opt/muse/current/kiosk/muse-backend verify-backup
+    ;;
+  database-integrity)
+    /opt/muse/current/.venv/bin/python /opt/muse/current/kiosk/muse-doctor --json
+    ;;
+  network-verify)
+    /opt/muse/current/.venv/bin/python /opt/muse/current/kiosk/verify-listeners.py
+    ;;
+  kiosk-restart)
+    require_root
+    [[ -n "$kiosk_user" ]] || {
+      printf 'No kiosk user is recorded.\n' >&2
+      exit 1
+    }
+    systemctl restart "muse-kiosk@${kiosk_user}.service"
+    ;;
+  *)
+    printf 'Usage: %s {status|start|stop|restart|logs [main|phone|kiosk|all]|readiness|backup|backup-verify|database-integrity|network-verify|kiosk-restart}\n' "$0" >&2
+    exit 2
+    ;;
+esac

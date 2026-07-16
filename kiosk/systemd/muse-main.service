@@ -1,0 +1,39 @@
+[Unit]
+Description=Muse loopback application
+Requires=muse-prepare.service
+After=muse-prepare.service
+StartLimitIntervalSec=5min
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=muse
+Group=muse
+WorkingDirectory=/opt/muse/current/backend
+EnvironmentFile=/etc/muse/muse.env
+EnvironmentFile=-/run/muse/network.env
+ExecStart=/opt/muse/current/kiosk/muse-backend serve --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=5min
+KillSignal=SIGTERM
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+ReadWritePaths=/var/lib/muse /run/muse
+
+[Install]
+WantedBy=multi-user.target

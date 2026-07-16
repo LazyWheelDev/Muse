@@ -1,0 +1,25 @@
+[Unit]
+Description=Refresh Muse private-network binding
+Requires=muse-prepare.service
+After=muse-prepare.service network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+EnvironmentFile=/etc/muse/muse.env
+ExecStart=/opt/muse/current/kiosk/refresh-network.sh
+UMask=0027
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE
+RestrictAddressFamilies=AF_UNIX AF_INET AF_NETLINK
+SystemCallArchitectures=native
+ReadWritePaths=/run/muse

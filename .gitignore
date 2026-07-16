@@ -60,6 +60,7 @@ blob-report/
 /backups/
 /maintenance/
 /generated/
+/release-output/
 *.muse-backup.zip
 *.pid
 *.log

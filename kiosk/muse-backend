@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+RELEASE_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd -P)"
+PYTHON="${RELEASE_ROOT}/.venv/bin/python"
+
+[[ -x "$PYTHON" && -d "${RELEASE_ROOT}/backend/src" && ! -L "${RELEASE_ROOT}/backend/src" ]] || {
+  printf 'Muse release Python environment or source tree is unavailable.\n' >&2
+  exit 1
+}
+
+export PYTHONPATH="${RELEASE_ROOT}/backend/src"
+exec "$PYTHON" -m muse_backend.cli "$@"

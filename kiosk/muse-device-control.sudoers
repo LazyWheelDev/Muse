@@ -1,0 +1,2 @@
+Cmnd_Alias MUSE_DEVICE_CONTROL = /usr/libexec/muse-device-control probe, /usr/libexec/muse-device-control restart_application, /usr/libexec/muse-device-control reboot_device, /usr/libexec/muse-device-control shutdown_device
+muse ALL=(root) NOPASSWD: MUSE_DEVICE_CONTROL

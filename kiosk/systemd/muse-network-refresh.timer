@@ -1,0 +1,12 @@
+[Unit]
+Description=Periodically detect Muse private-network changes
+
+[Timer]
+OnBootSec=10s
+OnUnitActiveSec=30s
+AccuracySec=5s
+Persistent=false
+Unit=muse-network-refresh.service
+
+[Install]
+WantedBy=timers.target

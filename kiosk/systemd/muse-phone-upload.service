@@ -1,0 +1,41 @@
+[Unit]
+Description=Muse restricted private-LAN phone upload listener
+Requires=muse-prepare.service
+After=muse-prepare.service network-online.target
+ConditionPathExists=/run/muse/network.env
+StartLimitIntervalSec=5min
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=muse
+Group=muse
+WorkingDirectory=/opt/muse/current/backend
+EnvironmentFile=/etc/muse/muse.env
+EnvironmentFile=/run/muse/network.env
+ExecStartPre=/opt/muse/current/.venv/bin/python /opt/muse/current/kiosk/lib/network_env.py --output /run/muse/network.env --check-existing
+ExecStart=/opt/muse/current/kiosk/muse-backend serve-phone-upload
+Restart=on-failure
+RestartSec=15s
+TimeoutStopSec=5min
+KillSignal=SIGTERM
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+SystemCallArchitectures=native
+ReadWritePaths=/var/lib/muse /run/muse
+
+[Install]
+WantedBy=multi-user.target
