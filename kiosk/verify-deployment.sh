@@ -37,6 +37,7 @@ fi
   "$SCRIPT_DIR/verify-listeners.py"
 
 grep -Fq '/opt/muse/current/kiosk/muse-backend serve --host 127.0.0.1 --port 8000' "$SCRIPT_DIR/systemd/muse-main.service"
+grep -Fq 'RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK' "$SCRIPT_DIR/systemd/muse-main.service"
 grep -Fq 'EnvironmentFile=/run/muse/network.env' "$SCRIPT_DIR/systemd/muse-phone-upload.service"
 grep -Fq 'ConditionPathExists=/run/muse/network.env' "$SCRIPT_DIR/systemd/muse-phone-upload.service"
 grep -Fq -- '--check-existing' "$SCRIPT_DIR/systemd/muse-phone-upload.service"
@@ -49,6 +50,21 @@ for kiosk_environment in \
   grep -Fq "$kiosk_environment" "$SCRIPT_DIR/systemd/muse-kiosk@.service"
 done
 grep -Fq 'UMask=0077' "$SCRIPT_DIR/systemd/muse-kiosk@.service"
+grep -Fq 'PrivateTmp=true' "$SCRIPT_DIR/systemd/muse-kiosk@.service"
+grep -Fq 'ProtectHome=read-only' "$SCRIPT_DIR/systemd/muse-kiosk@.service"
+[[ "$(grep -Fc 'ReadWritePaths=' "$SCRIPT_DIR/systemd/muse-kiosk@.service")" -eq 1 ]]
+grep -Fxq 'ReadWritePaths=/var/lib/muse-kiosk/%i' "$SCRIPT_DIR/systemd/muse-kiosk@.service"
+if grep -Fq 'ReadWritePaths=/var/lib/muse-kiosk/%i /run/user' "$SCRIPT_DIR/systemd/muse-kiosk@.service"; then
+  printf 'The kiosk must not make the compositor runtime tree writable.\n' >&2
+  exit 1
+fi
+# The activation contract must retain the literal shell variable until runtime.
+# shellcheck disable=SC2016
+grep -Fq '"muse-kiosk@${operator_user}.service"' "$SCRIPT_DIR/activate-release.sh"
+reset_line="$(grep -n 'systemctl reset-failed' "$SCRIPT_DIR/activate-release.sh" | cut -d: -f1)"
+# shellcheck disable=SC2016
+kiosk_start_line="$(grep -n 'systemctl enable --now "muse-kiosk@${operator_user}.service"' "$SCRIPT_DIR/activate-release.sh" | cut -d: -f1)"
+[[ -n "$reset_line" && -n "$kiosk_start_line" && "$reset_line" -lt "$kiosk_start_line" ]]
 for chromium_flag in \
   '--kiosk' \
   '--no-first-run' \

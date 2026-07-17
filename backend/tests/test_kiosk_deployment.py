@@ -416,6 +416,40 @@ def test_systemd_and_chromium_security_contracts() -> None:
     assert "kiosk/systemd/muse-kiosk@.service" in release.REQUIRED_PATHS
 
 
+def test_main_unit_allows_netlink_for_interface_discovery() -> None:
+    main_unit = (KIOSK_ROOT / "systemd/muse-main.service").read_text(encoding="utf-8")
+
+    assert "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK" in main_unit
+
+
+def test_kiosk_unit_keeps_wayland_visible_without_writable_runtime_access() -> None:
+    kiosk_unit = (KIOSK_ROOT / "systemd/muse-kiosk@.service").read_text(encoding="utf-8")
+
+    assert "PrivateTmp=true" in kiosk_unit
+    assert "ProtectHome=read-only" in kiosk_unit
+    writable_paths = [
+        line for line in kiosk_unit.splitlines() if line.startswith("ReadWritePaths=")
+    ]
+    assert writable_paths == ["ReadWritePaths=/var/lib/muse-kiosk/%i"]
+    assert "/run/user" not in writable_paths[0]
+
+
+def test_activation_resets_rate_limited_kiosk_before_start() -> None:
+    activation = (KIOSK_ROOT / "activate-release.sh").read_text(encoding="utf-8")
+    reset_failed = re.search(
+        r"systemctl reset-failed\s+\\\n"
+        r"\s+muse-prepare\.service\s+\\\n"
+        r"\s+muse-main\.service\s+\\\n"
+        r"\s+muse-phone-upload\.service\s+\\\n"
+        r'\s+"muse-kiosk@\$\{operator_user\}\.service"',
+        activation,
+    )
+    assert reset_failed is not None
+    assert reset_failed.start() < activation.index(
+        'systemctl enable --now "muse-kiosk@${operator_user}.service"'
+    )
+
+
 def test_wayland_launcher_uses_validated_private_kiosk_configuration() -> None:
     arguments, environment, profile, profile_mode = _run_test_launcher(use_wayland=True)
 
@@ -427,6 +461,7 @@ def test_wayland_launcher_uses_validated_private_kiosk_configuration() -> None:
         "--password-store=basic",
         "--disable-breakpad",
         "--disable-crash-reporter",
+        "--disable-session-crashed-bubble",
         "--disable-background-networking",
         "--disable-component-update",
         "--disable-domain-reliability",

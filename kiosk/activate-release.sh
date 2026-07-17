@@ -177,7 +177,11 @@ if [[ "$no_services" -eq 1 ]]; then
   exit 0
 fi
 
-systemctl reset-failed muse-prepare.service muse-main.service muse-phone-upload.service
+systemctl reset-failed \
+  muse-prepare.service \
+  muse-main.service \
+  muse-phone-upload.service \
+  "muse-kiosk@${operator_user}.service"
 systemctl restart muse-prepare.service
 systemctl start muse-main.service
 systemctl enable --now muse-network-refresh.timer
