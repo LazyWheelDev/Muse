@@ -3,6 +3,7 @@ import importlib.util
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -41,6 +42,8 @@ release = _load_module("muse_release_tool", KIOSK_ROOT / "lib" / "release.py")
 network = _load_module("muse_network_env", KIOSK_ROOT / "lib" / "network_env.py")
 
 VALID_RELEASE_ID = "20260716T120000Z-0123456789ab"
+SECRET_ASSIGNMENT_PATTERN = re.compile(r"(?i)\b(password|secret|token)=\S+")
+PHONE_TOKEN_PATTERN = re.compile(r"#token=[A-Za-z0-9_-]{43}")
 
 
 def _write_release_manifest(root: Path) -> None:
@@ -73,7 +76,11 @@ def _minimal_release(tmp_path: Path, *, include_kiosk: bool = False) -> Path:
         path.write_text(f"fixture for {relative}\n", encoding="utf-8")
     if include_kiosk:
         shutil.rmtree(root / "kiosk")
-        shutil.copytree(KIOSK_ROOT, root / "kiosk", ignore=shutil.ignore_patterns("tests"))
+        shutil.copytree(
+            KIOSK_ROOT,
+            root / "kiosk",
+            ignore=shutil.ignore_patterns("tests", *release.FORBIDDEN_PARTS),
+        )
         for script in (root / "kiosk").rglob("*"):
             if script.is_file() and script.read_bytes().startswith(b"#!"):
                 script.chmod(0o755)
@@ -89,6 +96,41 @@ def _archive_release(root: Path, destination: Path) -> Path:
     ):
         archive.add(root, arcname=root.name)
     return destination
+
+
+def _sanitize_installer_output(value: str, temporary_root: Path) -> str:
+    sanitized = value
+    replacements = {
+        str(temporary_root): "<temporary-root>",
+        str(REPOSITORY_ROOT): "<repository>",
+        str(Path.home()): "<home>",
+    }
+    for sensitive, replacement in sorted(replacements.items(), key=lambda item: -len(item[0])):
+        if sensitive and sensitive != "/":
+            sanitized = sanitized.replace(sensitive, replacement)
+    sanitized = PHONE_TOKEN_PATTERN.sub("#token=<redacted>", sanitized)
+    sanitized = SECRET_ASSIGNMENT_PATTERN.sub(r"\1=<redacted>", sanitized)
+    return sanitized.strip() or "<empty>"
+
+
+def _run_sandbox_install(command: list[str], *, invocation: str, temporary_root: Path) -> None:
+    failure: tuple[int, str, str] | None = None
+    try:
+        subprocess.run(command, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as error:
+        stdout = error.stdout if isinstance(error.stdout, str) else ""
+        stderr = error.stderr if isinstance(error.stderr, str) else ""
+        failure = (error.returncode, stdout, stderr)
+    if failure is None:
+        return
+    return_code, stdout, stderr = failure
+    pytest.fail(
+        f"sandbox installer failed during {invocation} invocation\n"
+        f"return code: {return_code}\n"
+        f"stdout (sanitized):\n{_sanitize_installer_output(stdout, temporary_root)}\n"
+        f"stderr (sanitized):\n{_sanitize_installer_output(stderr, temporary_root)}",
+        pytrace=False,
+    )
 
 
 def test_release_id_and_path_validation_reject_traversal() -> None:
@@ -479,6 +521,11 @@ def test_sandbox_install_is_idempotent_and_preserves_data(tmp_path: Path) -> Non
     data.mkdir(parents=True)
     sentinel = data / "preserve-me"
     sentinel.write_text("wardrobe\n", encoding="utf-8")
+    config = sandbox / "etc/muse"
+    config.mkdir(parents=True)
+    environment = config / "muse.env"
+    environment.write_text("MUSE_ENVIRONMENT=production\n", encoding="utf-8")
+    environment.chmod(0o640)
     command = [
         "bash",
         str(KIOSK_ROOT / "install-on-pi.sh"),
@@ -495,9 +542,11 @@ def test_sandbox_install_is_idempotent_and_preserves_data(tmp_path: Path) -> Non
         "--python-bin",
         sys.executable,
     ]
-    subprocess.run(command, check=True)
-    subprocess.run(command, check=True)
+    _run_sandbox_install(command, invocation="first", temporary_root=tmp_path)
+    _run_sandbox_install(command, invocation="second", temporary_root=tmp_path)
 
     assert sentinel.read_text(encoding="utf-8") == "wardrobe\n"
     assert (sandbox / "opt/muse/current").is_symlink()
-    assert (sandbox / "etc/muse/muse.env").stat().st_mode & 0o777 == 0o640
+    assert environment.read_text(encoding="utf-8") == "MUSE_ENVIRONMENT=production\n"
+    assert environment.stat().st_mode & 0o777 == 0o640
+    assert (sandbox / "opt/muse/releases" / VALID_RELEASE_ID).stat().st_mode & 0o777 == 0o555

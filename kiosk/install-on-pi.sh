@@ -228,10 +228,13 @@ else
   if [[ -z "$root_prefix" ]]; then
     chown -hR root:root "$extracted"
   fi
-  find "$extracted" -type d -exec chmod 0555 {} +
+  find "$extracted" -mindepth 1 -type d -exec chmod 0555 {} +
   find "$extracted" -type f -perm -u=x -exec chmod 0555 {} +
   find "$extracted" -type f ! -perm -u=x -exec chmod 0444 {} +
+  # Linux requires owner write access to update .. when moving a directory between parents.
+  chmod 0700 "$extracted"
   mv -- "$extracted" "$release"
+  chmod 0555 "$release"
   rmdir -- "$staging"
 fi
 
