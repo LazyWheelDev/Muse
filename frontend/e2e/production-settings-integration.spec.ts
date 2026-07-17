@@ -334,6 +334,85 @@ async function jsonResponse<T>(response: APIResponse, expected: number, label: s
   return body;
 }
 
+function processingResponseSummary(status: number, payload: unknown): string {
+  const body =
+    typeof payload === 'object' && payload !== null
+      ? (payload as Record<string, unknown>)
+      : undefined;
+  const state =
+    typeof body?.image_processing_state === 'string' ? body.image_processing_state : null;
+  const error =
+    typeof body?.error === 'object' && body.error !== null
+      ? (body.error as Record<string, unknown>)
+      : undefined;
+  const errorCode = typeof error?.code === 'string' ? error.code : null;
+  return JSON.stringify({
+    status,
+    ...(state === null ? {} : { image_processing_state: state }),
+    ...(errorCode === null ? {} : { error_code: errorCode }),
+    ...(state === null && errorCode === null ? { body: 'unrecognized' } : {}),
+  });
+}
+
+async function waitForTerminalGarmentProcessing(
+  request: APIRequestContext,
+  origin: string,
+  garment: ImportedGarment,
+  timeoutMs = 20_000,
+): Promise<void> {
+  const terminalStates = new Set(['completed', 'completed_with_fallback']);
+  const startedAt = performance.now();
+  let finalObservedState = garment.image_processing_state;
+  let sanitizedApiResponse = processingResponseSummary(201, garment);
+
+  try {
+    await expect
+      .poll(
+        async () => {
+          let response: APIResponse;
+          try {
+            response = await request.get(`${origin}/api/v1/clothing-items/${garment.id}`, {
+              timeout: 1_000,
+            });
+          } catch {
+            sanitizedApiResponse = JSON.stringify({ status: 'unavailable' });
+            return false;
+          }
+
+          const status = response.status();
+          let payload: unknown;
+          try {
+            payload = await response.json();
+          } catch {
+            payload = null;
+          } finally {
+            await response.dispose();
+          }
+          sanitizedApiResponse = processingResponseSummary(status, payload);
+          if (typeof payload === 'object' && payload !== null) {
+            const state = (payload as Record<string, unknown>).image_processing_state;
+            if (typeof state === 'string') finalObservedState = state;
+          }
+          return status === 200 && terminalStates.has(finalObservedState);
+        },
+        {
+          message: `Garment ${garment.id} must finish protected image processing.`,
+          timeout: timeoutMs,
+          intervals: [100, 250, 500],
+        },
+      )
+      .toBe(true);
+  } catch {
+    const elapsed = Math.round(performance.now() - startedAt);
+    throw new Error(
+      `Garment processing did not reach a terminal state: garment ID ${garment.id}; ` +
+        `final observed state ${JSON.stringify(finalObservedState)}; ` +
+        `elapsed ${elapsed}ms (timeout ${timeoutMs}ms); ` +
+        `sanitized API response ${sanitizedApiResponse}.`,
+    );
+  }
+}
+
 function settingsHeaders(origin: string): Record<string, string> {
   return { Origin: origin, 'Content-Type': 'application/json' };
 }
@@ -542,6 +621,8 @@ test('P6 production startup, Settings, restore, and delete-all remain local and 
       expect(imported.name).toBe('P6 Restored Garment');
       expect(imported.images.some((image) => image.image_kind === 'original')).toBe(true);
 
+      await waitForTerminalGarmentProcessing(request, contract.mainOrigin, imported);
+
       const outfit = await jsonResponse<SavedOutfit>(
         await request.post(`${contract.mainOrigin}/api/v1/outfits`, {
           data: {
@@ -563,28 +644,6 @@ test('P6 production startup, Settings, restore, and delete-all remain local and 
         'outfit creation',
       );
       expect(outfit.preview_url).not.toBeNull();
-
-      await expect
-        .poll(
-          async () => {
-            const response = await request.get(
-              `${contract.mainOrigin}/api/v1/clothing-items/${imported.id}`,
-            );
-            if (!response.ok()) {
-              await response.dispose();
-              return 'unavailable';
-            }
-            const detail = (await response.json()) as ImportedGarment;
-            await response.dispose();
-            return detail.image_processing_state;
-          },
-          {
-            message: 'Background processing must release the import gate before backup.',
-            timeout: 20_000,
-            intervals: [100, 250, 500],
-          },
-        )
-        .toMatch(/^(?:completed|completed_with_fallback)$/u);
 
       const backup = await jsonResponse<BackupSummary>(
         await request.post(`${contract.mainOrigin}/api/v1/settings/backups`, {
