@@ -71,8 +71,23 @@ cp "$SCRIPT_DIR/systemd/"* "$sandbox/etc/systemd/system/"
 printf 'root:x:0:0:root:/root:/bin/sh\nmuse:x:999:999:Muse:/nonexistent:/usr/sbin/nologin\ntest:x:1000:1000:Test:/nonexistent:/bin/sh\n' >"$sandbox/etc/passwd"
 printf 'root:x:0:\nmuse:x:999:\ntest:x:1000:\n' >"$sandbox/etc/group"
 printf 'MUSE_ENVIRONMENT=production\n' >"$sandbox/etc/muse/muse.env"
-for target in local-fs.target multi-user.target graphical.target network-online.target timers.target; do
+# DefaultDependencies adds standard boot and shutdown targets beyond those named by Muse units.
+for target in \
+  basic.target \
+  graphical.target \
+  local-fs.target \
+  multi-user.target \
+  network-online.target \
+  shutdown.target \
+  sysinit.target \
+  timers.target; do
   printf '[Unit]\nDescription=CI stub for %s\n' "$target" >"$sandbox/etc/systemd/system/$target"
+done
+for target in sysinit.target basic.target shutdown.target; do
+  if [[ ! -f "$sandbox/etc/systemd/system/$target" ]]; then
+    printf 'Missing systemd DefaultDependencies target stub: %s\n' "$target" >&2
+    exit 1
+  fi
 done
 touch \
   "$sandbox/opt/muse/current/.venv/bin/python" \
