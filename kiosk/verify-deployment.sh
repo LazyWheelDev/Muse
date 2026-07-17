@@ -40,6 +40,33 @@ grep -Fq '/opt/muse/current/kiosk/muse-backend serve --host 127.0.0.1 --port 800
 grep -Fq 'EnvironmentFile=/run/muse/network.env' "$SCRIPT_DIR/systemd/muse-phone-upload.service"
 grep -Fq 'ConditionPathExists=/run/muse/network.env' "$SCRIPT_DIR/systemd/muse-phone-upload.service"
 grep -Fq -- '--check-existing' "$SCRIPT_DIR/systemd/muse-phone-upload.service"
+for kiosk_environment in \
+  'Environment=HOME=/var/lib/muse-kiosk/%i' \
+  'Environment=XDG_CONFIG_HOME=/var/lib/muse-kiosk/%i/config' \
+  'Environment=XDG_CACHE_HOME=/var/lib/muse-kiosk/%i/cache' \
+  'Environment=XDG_DATA_HOME=/var/lib/muse-kiosk/%i/data' \
+  'Environment=MUSE_KIOSK_PROFILE=/var/lib/muse-kiosk/%i/chromium'; do
+  grep -Fq "$kiosk_environment" "$SCRIPT_DIR/systemd/muse-kiosk@.service"
+done
+grep -Fq 'UMask=0077' "$SCRIPT_DIR/systemd/muse-kiosk@.service"
+for chromium_flag in \
+  '--kiosk' \
+  '--no-first-run' \
+  '--no-default-browser-check' \
+  '--password-store=basic' \
+  '--disable-breakpad' \
+  '--disable-crash-reporter' \
+  '--disable-session-crashed-bubble' \
+  '--disable-background-networking' \
+  '--disable-component-update' \
+  '--disable-domain-reliability' \
+  '--disable-sync' \
+  '--no-pings' \
+  '--disable-features=Translate,MediaRouter,OptimizationHints' \
+  '--user-data-dir=' \
+  '--ozone-platform=wayland'; do
+  grep -Fq -- "$chromium_flag" "$SCRIPT_DIR/launch-kiosk.sh"
+done
 if grep -Eq -- '--no-sandbox|--remote-debugging' "$SCRIPT_DIR/launch-kiosk.sh"; then
   printf 'Unsafe Chromium production flag detected.\n' >&2
   exit 1

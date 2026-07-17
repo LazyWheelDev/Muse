@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
+umask 077
 
 profile="${MUSE_KIOSK_PROFILE:-}"
 [[ "$profile" == /var/lib/muse-kiosk/*/chromium ]] || {
@@ -19,6 +20,7 @@ if [[ -d "$runtime" ]]; then
 fi
 
 display_ready=0
+display_backend=""
 for _attempt in $(seq 1 60); do
   wayland_socket=""
   if [[ -d "$runtime" ]]; then
@@ -27,11 +29,13 @@ for _attempt in $(seq 1 60); do
   if [[ -n "$wayland_socket" ]]; then
     wayland_display="$(basename -- "$wayland_socket")"
     export WAYLAND_DISPLAY="$wayland_display"
+    display_backend="wayland"
     display_ready=1
     break
   fi
   if [[ -S /tmp/.X11-unix/X0 ]]; then
     export DISPLAY=:0
+    display_backend="x11"
     display_ready=1
     break
   fi
@@ -59,12 +63,26 @@ if [[ -f "$cursor_flag" && ! -L "$cursor_flag" && -x /usr/bin/unclutter ]]; then
   /usr/bin/unclutter --timeout 2 --ignore-scrolling --fork
 fi
 
+chromium_arguments=(
+  --kiosk
+  --no-first-run
+  --no-default-browser-check
+  --password-store=basic
+  --disable-breakpad
+  --disable-crash-reporter
+  --disable-session-crashed-bubble
+  --disable-background-networking
+  --disable-component-update
+  --disable-domain-reliability
+  --disable-sync
+  --no-pings
+  --disable-features=Translate,MediaRouter,OptimizationHints
+  "--user-data-dir=${profile}"
+)
+if [[ "$display_backend" == wayland ]]; then
+  chromium_arguments=(--ozone-platform=wayland "${chromium_arguments[@]}")
+fi
+
 exec "$chromium" \
-  --kiosk \
-  --no-first-run \
-  --no-default-browser-check \
-  --disable-session-crashed-bubble \
-  --disable-component-update \
-  --disable-features=Translate,MediaRouter \
-  --user-data-dir="$profile" \
+  "${chromium_arguments[@]}" \
   http://127.0.0.1:8000

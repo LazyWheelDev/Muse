@@ -152,23 +152,34 @@ systemd_root="${root_prefix}/etc/systemd/system"
 libexec_root="${root_prefix}/usr/libexec"
 sudoers_root="${root_prefix}/etc/sudoers.d"
 
+operator_group=""
 if [[ -z "$root_prefix" ]]; then
   getent passwd muse >/dev/null || useradd --system --home-dir /nonexistent --no-create-home --shell /usr/sbin/nologin muse
   id "$operator_user" >/dev/null 2>&1 || {
     printf 'Desktop operator account %s does not exist.\n' "$operator_user" >&2
     exit 1
   }
+  operator_group="$(id -gn "$operator_user")"
+elif id "$operator_user" >/dev/null 2>&1; then
+  operator_group="$(id -gn "$operator_user")"
 fi
 
 install -d -m 0755 "${opt_root}" "${opt_root}/releases" "${opt_root}/staging" "${opt_root}/state"
 install -d -m 0700 "$data_root"
 install -d -m 0750 "$config_root" "$runtime_root"
 install -d -m 0755 "$kiosk_data_root" "$systemd_root" "$libexec_root" "$sudoers_root"
-install -d -m 0700 "${kiosk_data_root}/${operator_user}" "${kiosk_data_root}/${operator_user}/chromium"
+install -d -m 0700 \
+  "${kiosk_data_root}/${operator_user}" \
+  "${kiosk_data_root}/${operator_user}/config" \
+  "${kiosk_data_root}/${operator_user}/cache" \
+  "${kiosk_data_root}/${operator_user}/data" \
+  "${kiosk_data_root}/${operator_user}/chromium"
 if [[ -z "$root_prefix" ]]; then
   chown -R muse:muse "$data_root"
   chown root:muse "$config_root" "$runtime_root"
-  chown -R "${operator_user}:${operator_user}" "${kiosk_data_root}/${operator_user}"
+fi
+if [[ -n "$operator_group" ]]; then
+  chown -R "${operator_user}:${operator_group}" "${kiosk_data_root}/${operator_user}"
 fi
 
 staging="${opt_root}/staging/${release_id}"

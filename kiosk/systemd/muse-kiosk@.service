@@ -9,12 +9,17 @@ StartLimitBurst=5
 Type=simple
 User=%i
 PAMName=login
+Environment=HOME=/var/lib/muse-kiosk/%i
+Environment=XDG_CONFIG_HOME=/var/lib/muse-kiosk/%i/config
+Environment=XDG_CACHE_HOME=/var/lib/muse-kiosk/%i/cache
+Environment=XDG_DATA_HOME=/var/lib/muse-kiosk/%i/data
 Environment=MUSE_KIOSK_PROFILE=/var/lib/muse-kiosk/%i/chromium
 ExecStart=/opt/muse/current/kiosk/launch-kiosk.sh
 Restart=on-failure
 RestartSec=10s
 TimeoutStartSec=90s
 TimeoutStopSec=30s
+UMask=0077
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true

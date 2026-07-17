@@ -5,9 +5,11 @@ import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import tarfile
+import tempfile
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -131,6 +133,86 @@ def _run_sandbox_install(command: list[str], *, invocation: str, temporary_root:
         f"stderr (sanitized):\n{_sanitize_installer_output(stderr, temporary_root)}",
         pytrace=False,
     )
+
+
+def _run_test_launcher(
+    *,
+    use_wayland: bool,
+) -> tuple[list[str], dict[str, str], Path, int]:
+    with tempfile.TemporaryDirectory(prefix="muse-kiosk-launch-", dir="/tmp") as temporary:
+        root = Path(temporary)
+        runtime = root / "runtime"
+        runtime.mkdir()
+        x11_socket = root / "X0"
+        display_socket_path = runtime / "wayland-0" if use_wayland else x11_socket
+
+        current = root / "opt/muse/current"
+        (current / "kiosk").mkdir(parents=True)
+        wait_readiness = current / "kiosk/wait-readiness.sh"
+        wait_readiness.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+        wait_readiness.chmod(0o755)
+
+        browser = root / "chromium"
+        browser.write_text(
+            "#!/usr/bin/env bash\n"
+            'printf \'%s\\n\' "$@" >"${MUSE_TEST_CAPTURE}/arguments"\n'
+            'env >"${MUSE_TEST_CAPTURE}/environment"\n',
+            encoding="utf-8",
+        )
+        browser.chmod(0o755)
+        browser_fallback = root / "chromium-browser"
+
+        kiosk_root = root / "var/lib/muse-kiosk"
+        profile = kiosk_root / "operator/chromium"
+        capture = root / "capture"
+        capture.mkdir()
+
+        launcher_text = (KIOSK_ROOT / "launch-kiosk.sh").read_text(encoding="utf-8")
+        replacements = (
+            ("/usr/bin/chromium-browser", str(browser_fallback)),
+            ("/usr/bin/chromium", str(browser)),
+            ("/opt/muse/current", str(current)),
+            ("/var/lib/muse-kiosk", str(kiosk_root)),
+            ("/run/user/${uid}", str(runtime)),
+            ("/tmp/.X11-unix/X0", str(x11_socket)),
+        )
+        for original, replacement in replacements:
+            launcher_text = launcher_text.replace(original, replacement)
+        launcher = root / "launch-kiosk.sh"
+        launcher.write_text(launcher_text, encoding="utf-8")
+        launcher.chmod(0o755)
+
+        environment = {
+            key: value
+            for key, value in os.environ.items()
+            if key
+            not in {"DBUS_SESSION_BUS_ADDRESS", "DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR"}
+        }
+        environment.update(
+            {
+                "MUSE_KIOSK_PROFILE": str(profile),
+                "MUSE_TEST_CAPTURE": str(capture),
+            }
+        )
+        with socket.socket(socket.AF_UNIX) as display_socket:
+            display_socket.bind(str(display_socket_path))
+            subprocess.run(
+                ["bash", str(launcher)],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=10,
+                env=environment,
+            )
+
+        arguments = (capture / "arguments").read_text(encoding="utf-8").splitlines()
+        captured_environment = dict(
+            line.split("=", 1)
+            for line in (capture / "environment").read_text(encoding="utf-8").splitlines()
+            if "=" in line
+        )
+        profile_mode = profile.stat().st_mode & 0o777
+        return arguments, captured_environment, profile, profile_mode
 
 
 def test_release_id_and_path_validation_reject_traversal() -> None:
@@ -317,6 +399,59 @@ def test_systemd_and_chromium_security_contracts() -> None:
     assert 'rm -rf -- "$data_root"' not in installer
     assert "ProtectSystem=strict" in main_unit
     assert "NoNewPrivileges=true" in main_unit
+
+    required_kiosk_environment = {
+        "Environment=HOME=/var/lib/muse-kiosk/%i",
+        "Environment=XDG_CONFIG_HOME=/var/lib/muse-kiosk/%i/config",
+        "Environment=XDG_CACHE_HOME=/var/lib/muse-kiosk/%i/cache",
+        "Environment=XDG_DATA_HOME=/var/lib/muse-kiosk/%i/data",
+        "Environment=MUSE_KIOSK_PROFILE=/var/lib/muse-kiosk/%i/chromium",
+    }
+    assert required_kiosk_environment <= set(kiosk_unit.splitlines())
+    assert "UMask=0077" in kiosk_unit
+    for directory in ("config", "cache", "data", "chromium"):
+        assert f'"${{kiosk_data_root}}/${{operator_user}}/{directory}"' in installer
+    assert 'chown -R "${operator_user}:${operator_group}"' in installer
+    assert "kiosk/launch-kiosk.sh" in release.REQUIRED_PATHS
+    assert "kiosk/systemd/muse-kiosk@.service" in release.REQUIRED_PATHS
+
+
+def test_wayland_launcher_uses_validated_private_kiosk_configuration() -> None:
+    arguments, environment, profile, profile_mode = _run_test_launcher(use_wayland=True)
+
+    required_flags = {
+        "--ozone-platform=wayland",
+        "--kiosk",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--password-store=basic",
+        "--disable-breakpad",
+        "--disable-crash-reporter",
+        "--disable-background-networking",
+        "--disable-component-update",
+        "--disable-domain-reliability",
+        "--disable-sync",
+        "--no-pings",
+        "--disable-features=Translate,MediaRouter,OptimizationHints",
+    }
+    assert required_flags <= set(arguments)
+    assert arguments[-1] == "http://127.0.0.1:8000"
+    assert f"--user-data-dir={profile}" in arguments
+    assert environment["WAYLAND_DISPLAY"] == "wayland-0"
+    assert "DISPLAY" not in environment
+    assert environment["XDG_RUNTIME_DIR"].endswith("/runtime")
+    assert environment["DBUS_SESSION_BUS_ADDRESS"] == (
+        f"unix:path={environment['XDG_RUNTIME_DIR']}/bus"
+    )
+    assert profile_mode == 0o700
+
+
+def test_x11_launcher_keeps_x11_backend_compatibility() -> None:
+    arguments, environment, _profile, _profile_mode = _run_test_launcher(use_wayland=False)
+
+    assert "--ozone-platform=wayland" not in arguments
+    assert environment["DISPLAY"] == ":0"
+    assert "WAYLAND_DISPLAY" not in environment
 
 
 def test_display_dry_run_cannot_be_combined_with_mutation(tmp_path: Path) -> None:
@@ -526,6 +661,12 @@ def test_sandbox_install_is_idempotent_and_preserves_data(tmp_path: Path) -> Non
     environment = config / "muse.env"
     environment.write_text("MUSE_ENVIRONMENT=production\n", encoding="utf-8")
     environment.chmod(0o640)
+    operator_user = subprocess.run(
+        ["id", "-un"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
     command = [
         "bash",
         str(KIOSK_ROOT / "install-on-pi.sh"),
@@ -534,7 +675,7 @@ def test_sandbox_install_is_idempotent_and_preserves_data(tmp_path: Path) -> Non
         "--release-tool",
         str(KIOSK_ROOT / "lib/release.py"),
         "--operator",
-        "kyle",
+        operator_user,
         "--root-prefix",
         str(sandbox),
         "--no-services",
@@ -543,6 +684,15 @@ def test_sandbox_install_is_idempotent_and_preserves_data(tmp_path: Path) -> Non
         sys.executable,
     ]
     _run_sandbox_install(command, invocation="first", temporary_root=tmp_path)
+    kiosk_operator_root = sandbox / "var/lib/muse-kiosk" / operator_user
+    for directory in (
+        kiosk_operator_root,
+        kiosk_operator_root / "config",
+        kiosk_operator_root / "cache",
+        kiosk_operator_root / "data",
+        kiosk_operator_root / "chromium",
+    ):
+        directory.chmod(0o755)
     _run_sandbox_install(command, invocation="second", temporary_root=tmp_path)
 
     assert sentinel.read_text(encoding="utf-8") == "wardrobe\n"
@@ -550,3 +700,13 @@ def test_sandbox_install_is_idempotent_and_preserves_data(tmp_path: Path) -> Non
     assert environment.read_text(encoding="utf-8") == "MUSE_ENVIRONMENT=production\n"
     assert environment.stat().st_mode & 0o777 == 0o640
     assert (sandbox / "opt/muse/releases" / VALID_RELEASE_ID).stat().st_mode & 0o777 == 0o555
+    for directory in (
+        kiosk_operator_root,
+        kiosk_operator_root / "config",
+        kiosk_operator_root / "cache",
+        kiosk_operator_root / "data",
+        kiosk_operator_root / "chromium",
+    ):
+        assert directory.stat().st_mode & 0o777 == 0o700
+        assert directory.stat().st_uid == os.getuid()
+        assert directory.stat().st_gid == os.getgid()
