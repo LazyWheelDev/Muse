@@ -76,7 +76,7 @@ chromium_arguments=(
   --disable-domain-reliability
   --disable-sync
   --no-pings
-  --disable-features=Translate,MediaRouter,OptimizationHints
+  "--disable-features=Translate,MediaRouter,OptimizationHints"
   "--user-data-dir=${profile}"
 )
 if [[ "$display_backend" == wayland ]]; then
