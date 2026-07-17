@@ -1,6 +1,6 @@
 # Contributing to Muse
 
-Muse is an offline-first smart wardrobe for a dedicated Raspberry Pi
+Muse is a local-first smart wardrobe for a dedicated Raspberry Pi
 touchscreen. Keep changes within the approved MVP and follow `AGENTS.md`, the
 design-system documentation, and the approved mockups.
 

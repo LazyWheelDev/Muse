@@ -1,9 +1,11 @@
 # Raspberry Pi operator runbook
 
-This is tomorrow's end-to-end physical deployment sequence. It intentionally
-starts with discovery and contains stop points. Replace values in angle brackets
-only after observing them. Do not run display-changing commands until the
-connected hardware reports the intended mode and touch device.
+This is the end-to-end physical release sequence used after the July 17, 2026
+functional Raspberry Pi baseline. It intentionally starts with discovery and
+contains stop points. Replace values in angle brackets only after observing
+them. Do not run display-changing commands until the connected hardware reports
+the intended mode and touch device. A previous successful release does not
+validate a newly built archive.
 
 ## 1. Connect and power the hardware
 
@@ -125,8 +127,25 @@ Still on the Mac:
 ./kiosk/deploy.sh --host muse.local --user kyle --release "$ARCHIVE" --dry-run
 ```
 
-This performs no SSH or device change. Review the release ID and target. Then,
-with the Pi powered, connected, and checkpoints approved:
+This performs no SSH or device change. Review the release ID and target. Before
+installation, connect to the Pi and create a separate verified production
+backup. Record the reported backup ID and current aggregate counts; do not print
+garment names, notes, filenames, QR URLs, or tokens:
+
+```bash
+ssh kyle@muse.local
+sudo /opt/muse/current/kiosk/muse-ctl backup
+sudo /opt/muse/current/kiosk/muse-ctl backup-verify
+curl --fail --silent http://127.0.0.1:8000/api/v1/clothing-items | \
+  python3 -c 'import json,sys; print("garments", json.load(sys.stdin)["total"])'
+curl --fail --silent http://127.0.0.1:8000/api/v1/outfits | \
+  python3 -c 'import json,sys; print("outfits", json.load(sys.stdin)["total"])'
+exit
+```
+
+The activation workflow creates and validates another pre-update backup before
+switching releases. Both checks must succeed. Then, with the Pi powered,
+connected, and checkpoints approved:
 
 ```bash
 ./kiosk/deploy.sh --host muse.local --user kyle --release "$ARCHIVE"
@@ -150,6 +169,8 @@ sudo /opt/muse/current/kiosk/muse-ctl readiness
 sudo /opt/muse/current/kiosk/muse-ctl network-verify
 sudo systemd-analyze verify /etc/systemd/system/muse-*.service /etc/systemd/system/muse-*.timer
 sudo systemd-analyze security muse-main.service muse-phone-upload.service muse-prepare.service
+sudo systemctl show muse-main.service --property=RestrictAddressFamilies --no-pager
+sudo systemctl cat muse-main.service
 sudo /opt/muse/current/.venv/bin/python /opt/muse/current/kiosk/muse-doctor \
   --full --output /tmp/muse-device-discovery.json
 ```
@@ -164,6 +185,31 @@ Confirm:
 - `/var/lib/muse` is private and database checks pass;
 - the active release and commit match the built manifest;
 - no hardening directive is rejected by the target systemd version.
+
+Create one session through the loopback API without displaying its token, check
+that the restricted listener is ready, then cancel the unused session:
+
+```bash
+SESSION_ID="$(python3 - <<'PY'
+import json
+import urllib.request
+
+request = urllib.request.Request(
+    "http://127.0.0.1:8000/api/v1/phone-upload-sessions",
+    data=b"",
+    method="POST",
+)
+with urllib.request.urlopen(request, timeout=5) as response:
+    payload = json.load(response)
+    if response.status != 201 or payload.get("listener_status") != "ready":
+        raise SystemExit("phone session endpoint is not ready")
+    print(payload["id"])
+PY
+)"
+curl --fail --silent --request DELETE \
+  "http://127.0.0.1:8000/api/v1/phone-upload-sessions/${SESSION_ID}"
+unset SESSION_ID
+```
 
 **Checkpoint F:** do not continue to physical acceptance if the main API is on
 `0.0.0.0`, database integrity fails, permissions are broad, or the restricted
@@ -204,6 +250,38 @@ upload, touch input, and navigation must still work. If the kiosk cannot enter
 the detected graphical session, do not add multiple autostart systems. Review
 the actual `loginctl` session and choose one session-native integration before
 changing the unit.
+
+If this device used the July 17 temporary production drop-ins, remove them only
+after the active release files and effective units show the committed
+`AF_NETLINK`, `PrivateTmp`, `ProtectHome=read-only`, and single kiosk writable
+path. Then reload and restart the affected services to prove the release is
+self-contained:
+
+```bash
+grep -Fx 'RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK' \
+  /opt/muse/current/kiosk/systemd/muse-main.service
+grep -Fx 'PrivateTmp=true' \
+  /opt/muse/current/kiosk/systemd/muse-kiosk@.service
+grep -Fx 'ProtectHome=read-only' \
+  /opt/muse/current/kiosk/systemd/muse-kiosk@.service
+grep -Fx 'ReadWritePaths=/var/lib/muse-kiosk/%i' \
+  /opt/muse/current/kiosk/systemd/muse-kiosk@.service
+sudo rm -f \
+  /etc/systemd/system/muse-kiosk@.service.d/runtime-fix.conf \
+  /etc/systemd/system/muse-main.service.d/network-fix.conf
+sudo systemctl daemon-reload
+sudo systemctl reset-failed muse-main.service 'muse-kiosk@kyle.service'
+sudo systemctl restart muse-main.service
+sudo systemctl restart muse-network-refresh.service
+sudo systemctl restart 'muse-kiosk@kyle.service'
+sudo /opt/muse/current/kiosk/muse-ctl readiness
+sudo /opt/muse/current/kiosk/muse-ctl network-verify
+sudo systemctl cat muse-main.service 'muse-kiosk@kyle.service'
+```
+
+The final `systemctl cat` output must contain no `runtime-fix.conf` or
+`network-fix.conf` section. Recheck the QR session endpoint and kiosk journal
+before proceeding to the reboot checkpoint.
 
 From a terminal inside the graphical session, inspect the exact planned change:
 

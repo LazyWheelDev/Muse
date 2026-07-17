@@ -26,6 +26,23 @@ gate; this document remains the exhaustive later validation procedure.
 Record the Muse commit, OS image, kernel, Python, Chromium, storage model, and
 whether active cooling is fitted before beginning.
 
+## July 17, 2026 functional hardware baseline
+
+The operator physically exercised Muse on the intended Raspberry Pi 5 with
+8 GB RAM, Raspberry Pi OS, labwc/Wayland, and the `1280 × 800` touchscreen.
+Touchscreen navigation, Wardrobe, Clothing Details, local and QR phone import,
+Outfit Builder, Saved Outfits, Settings, local-network status, persistence, and
+backups worked on that device. Chromium reached the application with the private
+HOME/XDG/profile contract and accepted touch input.
+
+That run also identified three release-integration gaps that were temporarily
+corrected with systemd drop-ins: read-only Wayland runtime visibility for the
+kiosk, `AF_NETLINK` for main-process interface discovery, and failed-state reset
+for a rate-limited kiosk activation. The repository now carries those settings
+directly. The demo release is not considered cold-boot validated until it is
+installed, the temporary drop-ins are removed, the device is rebooted, and the
+same persisted wardrobe and saved outfits remain visible.
+
 ## Prepare a representative data set
 
 Use a disposable copy of the production configuration. Import at least 60
@@ -391,7 +408,7 @@ results. Record cold and warm timing, main/listener/Chromium RSS, backup peak
 RSS, archive sizes, storage-summary latency, temperature, and throttling without
 turning an unmeasured value into a release claim.
 
-## Current non-Pi evidence and remaining status
+## Development-machine evidence
 
 On 2026-07-15 the production frontend and same-origin backend were measured on
 an Apple M4 (`arm64`) development machine with Python 3.13.14 and headless
@@ -448,9 +465,11 @@ These are release acceptance targets, not claims about the current development
 machine. Record and investigate any miss instead of weakening a threshold
 without target-hardware evidence.
 
-No Raspberry Pi result is recorded yet. All timing, responsiveness, memory,
-temperature, throttling, touch, storage, systemd, kiosk, and interruption checks
-in this document remain open until executed on the specified device.
+The July 17 functional Raspberry Pi baseline above is recorded. Exhaustive
+timing, memory, temperature, throttling, large-data, interruption, and endurance
+checks in this document remain open unless a result is explicitly added to the
+release record. Do not infer those measurements from the successful manual
+product flow.
 
 ## Result record
 

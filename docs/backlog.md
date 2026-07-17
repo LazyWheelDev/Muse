@@ -330,9 +330,11 @@ extension and is not part of P5 completion.
 - [x] Preserve functionality with Reduced Motion and the display asleep
 
 P6 is software-complete. The release contract is verified on development and CI
-environments, but real touchscreen dexterity, Raspberry Pi timing, thermal,
-throttling, display, systemd, kiosk, and power-action acceptance remains P7
-work. Privileged controls stay unavailable until that validation is complete.
+environments. A July 17, 2026 Raspberry Pi 5 functional baseline now covers the
+touchscreen product flow, kiosk, persistence, local network, QR upload, and
+backups. Exhaustive timing, thermal, throttling, large-data, interruption, and
+per-archive cold-boot acceptance remain open. Privileged controls stay bounded
+by the installed P7 capabilities.
 
 ---
 
@@ -340,32 +342,36 @@ work. Privileged controls stay unavailable until that validation is complete.
 
 ## P7.1 Production Build
 
-- [ ] Build the frontend for production
-- [ ] Serve the frontend locally
-- [ ] Configure production paths
-- [ ] Configure persistent data storage
-- [ ] Confirm offline operation
+- [x] Build the frontend for production
+- [x] Serve the frontend locally
+- [x] Configure production paths
+- [x] Configure persistent data storage
+- [x] Confirm local-first operation without a mandatory Internet route
 
 ---
 
 ## P7.2 Kiosk Mode
 
-- [ ] Configure Chromium kiosk mode
-- [ ] Hide browser controls
-- [ ] Disable unnecessary system UI
-- [ ] Open Muse automatically
-- [ ] Restore Muse after Chromium restarts
+- [x] Configure Chromium kiosk mode
+- [x] Hide browser controls
+- [x] Disable unnecessary system UI
+- [x] Open Muse automatically
+- [x] Restore Muse after Chromium restarts
 
 ---
 
 ## P7.3 Automatic Startup
 
-- [ ] Create the backend systemd service
-- [ ] Create the kiosk startup service
-- [ ] Wait for backend health before opening Muse
-- [ ] Restart failed services
-- [ ] Add readable local logs
+- [x] Create the backend systemd service
+- [x] Create the kiosk startup service
+- [x] Wait for backend health before opening Muse
+- [x] Restart failed services
+- [x] Add readable local logs
 - [ ] Test a full device reboot
+
+The July 17 run validated the installed functional baseline. The final checkbox
+remains open until the new immutable release is deployed without its temporary
+systemd drop-ins and passes one clean cold reboot with production data intact.
 
 ---
 
@@ -373,37 +379,37 @@ work. Privileged controls stay unavailable until that validation is complete.
 
 ## P8.1 Backend Tests
 
-- [ ] Test the health endpoint
-- [ ] Test clothing CRUD
-- [ ] Test outfit CRUD
-- [ ] Test upload validation
-- [ ] Test database persistence
-- [ ] Test invalid input handling
+- [x] Test the health endpoint
+- [x] Test clothing CRUD
+- [x] Test outfit CRUD
+- [x] Test upload validation
+- [x] Test database persistence
+- [x] Test invalid input handling
 
 ---
 
 ## P8.2 Frontend Tests
 
-- [ ] Test critical components
-- [ ] Test wardrobe loading
-- [ ] Test outfit saving
-- [ ] Test error states
-- [ ] Test critical touchscreen interactions where practical
+- [x] Test critical components
+- [x] Test wardrobe loading
+- [x] Test outfit saving
+- [x] Test error states
+- [x] Test critical touchscreen interactions where practical
 
 ---
 
 ## P8.3 End-to-End Demo Flow
 
-- [ ] Launch Muse
-- [ ] Import a garment
-- [ ] Categorize it
-- [ ] Browse the wardrobe
-- [ ] Add garments to the silhouette
-- [ ] Adjust transformations
-- [ ] Change layer order
-- [ ] Save the outfit
-- [ ] Restart Muse
-- [ ] Confirm all data persists
+- [x] Launch Muse
+- [x] Import a garment
+- [x] Categorize it
+- [x] Browse the wardrobe
+- [x] Add garments to the silhouette
+- [x] Adjust transformations
+- [x] Change layer order
+- [x] Save the outfit
+- [x] Restart Muse
+- [x] Confirm all data persists
 
 ---
 

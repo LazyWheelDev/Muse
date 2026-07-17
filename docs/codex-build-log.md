@@ -1,5 +1,75 @@
 # Codex build log
 
+## 2026-07-17 — Build Week demo release stabilization
+
+### Physical baseline and release fixes
+
+- The operator exercised Muse on the intended Raspberry Pi 5 with 8 GB RAM,
+  Raspberry Pi OS, labwc/Wayland, Chromium 150, and the `1280 × 800`
+  touchscreen. Touch navigation, Wardrobe, Clothing Details, local and QR phone
+  import, Outfit Builder, Saved Outfits, Settings, local-network status,
+  persistence, and backups worked on the device.
+- That run isolated three release-integration defects. Chromium needed read-only
+  visibility of the compositor-owned Wayland runtime while retaining its private
+  HOME, XDG directories, profile, and temporary storage. Main-process local
+  address discovery needed `AF_NETLINK` for Python's `socket.if_nameindex()`.
+  Activation also needed to clear a previously rate-limited selected kiosk
+  instance before starting it.
+- The committed kiosk unit now uses `PrivateTmp=true`,
+  `ProtectHome=read-only`, and one explicit writable path,
+  `/var/lib/muse-kiosk/%i`. The main unit permits `AF_UNIX`, `AF_INET`,
+  `AF_INET6`, and `AF_NETLINK` while its complete HTTP application remains
+  loopback-bound. Release activation resets failed state for prepare, main,
+  phone upload, and `muse-kiosk@<operator>` before enable/start.
+- Focused tests and the deployment verifier enforce those exact unit contracts,
+  the activation ordering, and Chromium's private profile, Wayland,
+  password-store, Crashpad, and session-recovery flags. No product feature,
+  approved mockup, database schema, storage contract, or runtime network
+  boundary changed.
+
+### Verification results
+
+- Backend dependency locking, Ruff format/lint, and strict mypy passed. The
+  complete backend suite passed 268 tests with one platform skip and 85.79%
+  branch coverage against the unchanged 85% threshold. The skip covers the
+  Linux-only sandbox-install integration on the macOS development host.
+- Frontend dependency installation and the high-severity npm audit passed with
+  no vulnerability. TypeScript, ESLint with zero warnings, Prettier, and Vitest
+  passed; Vitest ran 230 tests in 34 files.
+- Both production frontends built with the pinned Node.js 24.18.0 and npm
+  11.16.0 toolchain. The device entry was 505.13 kB JavaScript (153.32 kB gzip)
+  and 63.23 kB CSS (10.42 kB gzip); the phone entry was 213.74 kB JavaScript
+  (67.48 kB gzip) and 10.00 kB CSS (2.81 kB gzip). Vite retains the known
+  device-entry `>500 kB` advisory.
+- The `1280 × 800` route-shell check passed. The two production garment/outfit
+  scenarios, the complete QR phone-upload scenario, and the isolated production
+  Settings/backup/restore/delete-all scenario all passed against disposable
+  storage. The destructive Settings scenario never used `/var/lib/muse` or the
+  production database.
+- Twenty focused kiosk/deployment tests passed with the same Linux-only skip.
+  Bash syntax, ShellCheck, shfmt, Python helper compilation, and the deployment
+  verifier's static checks passed. `systemd-analyze` is unavailable on the macOS
+  host, so target-version unit verification remains an explicit CI and Pi
+  checkpoint.
+- A fresh SQLite database upgraded through `20260715_0003`, reported current
+  migration status and no pending model operation, downgraded to
+  `20260715_0002`, and re-upgraded to head. `integrity_check` returned `ok` and
+  `foreign_key_check` returned no row at each inspected revision.
+
+### Build Week collaboration and remaining gate
+
+- Codex and GPT-5.6 Sol supported the repository audits, phased implementation,
+  secure import and two-listener design, tests, release engineering, and
+  diagnosis of the physical systemd/Wayland failures. The human retained MVP,
+  visual, privacy, hardware, network, risk, and final release decisions. Muse
+  has no runtime dependency on Codex, an OpenAI model, or an OpenAI API.
+- This physical run is a functional hardware baseline, not acceptance of every
+  future archive. The final demo archive must still be installed after a
+  separate verified production backup, the temporary systemd drop-ins removed,
+  and the Pi cold-booted. Existing garments and outfits must survive and the
+  kiosk, network, QR path, and service boundaries must pass without an override
+  before the release can be called demo-ready.
+
 ## 2026-07-16 — P6.1–P6.4 final product experience
 
 ### Scope completed
@@ -129,13 +199,10 @@ Raspberry Pi performance measurements.
 
 ### Remaining validation
 
-- No Raspberry Pi result is claimed. P7 must install and validate the real
-  Chromium kiosk, systemd supervision, display/touch configuration, storage,
-  Wi-Fi, service activation, and narrowly privileged device actions.
-- Run the expanded physical procedure on the intended Pi 5 and touchscreen,
-  recording cold/warm Splash and navigation timing, main/listener/Chromium RSS,
-  backup peak RSS and storage writes, touch dexterity, interruption recovery,
-  temperature, and throttling.
+- At P6 closure no Raspberry Pi result was claimed. The July 17 functional
+  baseline recorded above supersedes that historical status. The exhaustive
+  timing, memory, thermal, large-data, interruption, and final immutable-release
+  cold-boot checks remain governed by `docs/raspberry-pi-validation.md`.
 
 ## 2026-07-15 — P4.4 secure local-network phone upload
 

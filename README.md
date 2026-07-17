@@ -1,9 +1,10 @@
 # Muse
 
-Muse is an offline-first smart wardrobe for a dedicated Raspberry Pi 5
-touchscreen. It lets users organize clothing, compose garments on a silhouette,
-control layers, and save outfits without requiring a cloud account, subscription,
-or Internet connection.
+Muse is a local-first smart wardrobe for a dedicated Raspberry Pi 5 touchscreen.
+Clothing, outfits, image processing, preferences, and storage remain on the
+device. No cloud account, subscription, hosted service, or paid API is mandatory;
+phone upload uses only the trusted local network. Optional Internet connectivity
+may later be used for explicitly initiated software updates.
 
 The current implementation includes the complete garment, phone-import, outfit,
 and product-experience slices: secure local streaming import, short-lived QR
@@ -11,12 +12,17 @@ handoff, exact-original preservation, safe local derivatives, SQLite
 persistence, Wardrobe and Clothing Details, the manual Outfit Builder,
 deterministic local preview generation, the approved Saved Outfits grid,
 readiness-aware Splash, typed Settings, local backups, capability-aware device
-information, and the complete P7 Raspberry Pi release/deployment architecture.
-Physical Raspberry Pi validation remains an operator milestone.
+information, and the complete Raspberry Pi release/deployment architecture. On
+July 17, 2026, the application was physically exercised on a Raspberry Pi 5 with
+8 GB RAM, Raspberry Pi OS, labwc/Wayland, and the intended `1280 × 800`
+touchscreen. The touchscreen UI, Wardrobe, Details, QR phone upload, Outfit
+Builder, Saved Outfits, Settings, local-network status, persistence, and backups
+all operated on that device. Each immutable release still requires its own clean
+deployment and cold-boot acceptance record.
 
 ## MVP principles
 
-- Local and offline by default
+- Local-first data and processing
 - Touch-first at `1280 × 800`
 - User-controlled outfit selection
 - No mandatory paid API or hosted service
@@ -29,6 +35,35 @@ design. Production deployment is documented in
 [docs/raspberry-pi-deployment.md](docs/raspberry-pi-deployment.md), with the
 physical sequence in
 [docs/raspberry-pi-operator-runbook.md](docs/raspberry-pi-operator-runbook.md).
+
+## OpenAI Build Week
+
+Muse was designed and implemented during OpenAI Build Week with Codex as the
+primary engineering collaborator. Codex helped audit product documents and
+mockups, translate the approved scope into phased architecture, implement and
+test the React/FastAPI/SQLite system, review security boundaries, build release
+tooling, and diagnose failures observed on the physical Raspberry Pi. GPT-5.6
+Sol powered the primary Codex implementation sessions. The repository records
+the material assisted work and verification evidence in
+[docs/codex-build-log.md](docs/codex-build-log.md).
+
+The human retained the product and release decisions: MVP scope, approved visual
+direction, the choice to keep garment selection manual and storage local, the
+two-listener phone-upload boundary, the Raspberry Pi hardware and network setup,
+which trade-offs were acceptable, and whether physical behavior passed the demo
+gate. Codex did not replace hardware observation, operator authentication, or
+the final release decision. Muse has no runtime dependency on Codex, GPT-5.6
+Sol, another OpenAI model, or an OpenAI API.
+
+The reproducible entry points are:
+
+| Goal                                | Command or section                                                                                                                       |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Install development dependencies    | Follow [First-time setup](#first-time-setup) with `uv sync --locked --all-groups` and `npm ci`                                           |
+| Run locally                         | Start `muse-backend migrate`, `muse-backend serve --reload`, then `npm run dev` as documented in [Local development](#local-development) |
+| Run the complete verification suite | Use the backend, frontend, browser, kiosk, and release commands in [Verification](#verification)                                         |
+| Build an immutable Pi release       | Run `./kiosk/build-release.sh` from a clean synchronized commit                                                                          |
+| Deploy and validate the Pi          | Follow [the operator runbook](docs/raspberry-pi-operator-runbook.md), beginning with a verified production backup                        |
 
 ## Repository structure
 
@@ -590,7 +625,9 @@ command without contacting a device using:
 ```
 
 Read the deployment architecture and operator runbook linked above before any
-physical installation. Repository preparation is not Raspberry Pi validation.
+physical installation. Prior physical success does not validate a newly built
+archive; its installed release ID, services, data preservation, and cold boot
+must be checked again.
 
 The installer creates `/etc/muse/muse.env` from `kiosk/muse.env.example` only
 when no production configuration exists. Private IPv4, advertised address, and

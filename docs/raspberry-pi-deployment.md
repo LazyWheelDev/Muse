@@ -1,10 +1,12 @@
 # Raspberry Pi production deployment
 
-This document defines the P7 production architecture prepared for Muse. The
-Chromium configuration in this document was manually validated on a Raspberry
-Pi 5 running Debian 13, labwc/Wayland, Chromium 150, and a 1280 × 800
-touchscreen. That finding validates kiosk startup and touch interaction, not the
-full release acceptance procedure. Follow
+This document defines the production architecture used by Muse. On July 17,
+2026, it was exercised on the intended Raspberry Pi 5 with 8 GB RAM, Raspberry
+Pi OS, labwc/Wayland, Chromium 150, and a `1280 × 800` touchscreen. The operator
+manually validated kiosk startup, touch, Wardrobe, Clothing Details, local and
+QR phone import, Outfit Builder, Saved Outfits, Settings, network status,
+persistence, and backups. That record is a functional hardware baseline, not a
+substitute for installing and cold-booting each immutable release. Follow
 [raspberry-pi-operator-runbook.md](raspberry-pi-operator-runbook.md) on the
 target device and record every checkpoint before declaring the device ready.
 
@@ -146,6 +148,10 @@ a backup using Muse's existing snapshot and archive contract. Activation then
 stops kiosk and both listeners, records the previous release, atomically swaps
 `/opt/muse/current`, reruns preparation, starts services, waits up to 90 seconds
 for readiness, verifies port bindings, and only then records `active-release`.
+Before starting the selected kiosk instance, activation resets failed state for
+prepare, main, phone upload, and `muse-kiosk@<operator>`. A kiosk that previously
+hit systemd's start-rate limit can therefore recover during the same controlled
+activation rather than requiring an unrelated manual reset.
 If a database already exists but there is no recorded active release, first
 activation refuses to guess its provenance; the operator must import or verify
 an explicit Muse backup before proceeding.
@@ -196,10 +202,18 @@ empty capability and ambient sets, private temporary storage, address-family
 restrictions, an owner-only umask, and explicit writable paths. `DynamicUser`
 is intentionally omitted because persistent `/var/lib/muse` ownership must
 remain stable. `ProcSubset=pid` is omitted because device diagnostics read
-bounded `/proc` files. Kiosk intentionally does not use `PrivateTmp` because an
-X11 session may require its real socket; it still has no write path to Muse
-data. `MemoryDenyWriteExecute` is applied to the Python services and must be
-confirmed by the physical run.
+bounded `/proc` files. The main service permits `AF_NETLINK` in addition to
+Unix, IPv4, and IPv6 sockets because Python's `socket.if_nameindex()` uses the
+netlink interface on Raspberry Pi OS during local-address discovery. The main
+HTTP listener remains explicitly bound to `127.0.0.1`.
+
+The kiosk uses `PrivateTmp=true` and `ProtectHome=read-only`. The latter keeps
+the compositor-owned `/run/user/<uid>/wayland-*` socket visible but read-only;
+the unit does not add `/run/user` to its writable paths. Its only explicit
+writable filesystem path is `/var/lib/muse-kiosk/<desktop-user>`. Chromium
+therefore retains the real Wayland socket while HOME, XDG state, and its profile
+remain private and operator-owned. `MemoryDenyWriteExecute` is applied to the
+Python services and must be confirmed by the physical run.
 
 Run `systemd-analyze verify` and `systemd-analyze security` on the target after
 installation; the CI syntax check cannot prove target-version compatibility.
@@ -262,6 +276,14 @@ timeout returned `124`. `--password-store=basic` is required because the
 system-managed kiosk is not allowed to wait for an interactive Linux keyring
 creation/unlock prompt. Muse does not save browser passwords, and all kiosk
 state remains inside the private operator-owned tree.
+
+The first production unit also hid the real Wayland socket with
+`ProtectHome=true`; an interim drop-in proved the narrower permanent contract.
+`ProtectHome=read-only` restores read-only socket visibility, `PrivateTmp=true`
+keeps Chromium temporary files private, and only the dedicated kiosk state tree
+is writable. The committed unit now contains that contract directly, so the
+temporary `runtime-fix.conf` override must be removed only after the new release
+is active and its effective unit has been inspected.
 
 Chromium 150 also emitted non-fatal GCM `PHONE_REGISTRATION_ERROR` messages
 during the successful manual run. Chromium's documented
@@ -368,13 +390,15 @@ sudo /opt/muse/current/kiosk/muse-ctl network-verify
 sudo /opt/muse/current/kiosk/muse-ctl kiosk-restart
 ```
 
-## Offline guarantee
+## Local-first runtime contract
 
-After installation and dependency synchronization, Muse requires no GitHub,
-npm, Node.js, Vite, CDN, hosted font, external QR generator, model, cloud API,
-Internet route, Mac, or telemetry endpoint. Frontends, fonts, QR generation,
-image processing, SQLite, backups, and all API calls remain local. Phone import
-needs only a shared private LAN; wardrobe use needs only loopback.
+After installation and dependency synchronization, core Muse use requires no
+GitHub, npm, Node.js, Vite, CDN, hosted font, external QR generator, model,
+cloud API, Internet route, Mac, or telemetry endpoint. Frontends, fonts, QR
+generation, image processing, SQLite, and backups remain on the Pi. Phone import
+uses only the shared trusted private LAN; wardrobe use needs only loopback.
+Optional Internet connectivity may later support explicitly initiated software
+updates, but it is not a dependency of the current product flows.
 
 ## Uninstallation and data removal
 
