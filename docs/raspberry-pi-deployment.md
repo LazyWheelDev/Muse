@@ -1,10 +1,12 @@
 # Raspberry Pi production deployment
 
-This document defines the P7 production architecture prepared for Muse. It is
-an implementation and operator reference, not evidence of physical Raspberry Pi
-validation. Follow [raspberry-pi-operator-runbook.md](raspberry-pi-operator-runbook.md)
-on the target device and record every checkpoint before declaring the device
-ready.
+This document defines the P7 production architecture prepared for Muse. The
+Chromium configuration in this document was manually validated on a Raspberry
+Pi 5 running Debian 13, labwc/Wayland, Chromium 150, and a 1280 × 800
+touchscreen. That finding validates kiosk startup and touch interaction, not the
+full release acceptance procedure. Follow
+[raspberry-pi-operator-runbook.md](raspberry-pi-operator-runbook.md) on the
+target device and record every checkpoint before declaring the device ready.
 
 ## Repository audit discrepancies resolved in P7
 
@@ -29,7 +31,7 @@ configuration outside the active code tree:
 | Atomic active release                 | `/opt/muse/current`                  | root-owned relative symlink                             |
 | Deployment state                      | `/opt/muse/state`                    | `root:root`, `0755`; non-sensitive IDs only             |
 | Wardrobe data, SQLite, media, backups | `/var/lib/muse`                      | `muse:muse`, `0700`                                     |
-| Chromium profile only                 | `/var/lib/muse-kiosk/<desktop-user>` | desktop user, `0700`                                    |
+| Chromium profile and XDG state        | `/var/lib/muse-kiosk/<desktop-user>` | desktop user; directories `0700`, service umask `0077`  |
 | Production settings                   | `/etc/muse/muse.env`                 | `root:muse`, `0640`                                     |
 | Generated network settings            | `/run/muse/network.env`              | `root:muse`, `0640`, atomic and ephemeral               |
 | Logs                                  | journald                             | no application log files                                |
@@ -223,12 +225,61 @@ remains the fallback.
 ## Chromium kiosk
 
 The templated service runs as the graphical account, waits for local readiness,
-detects a Wayland socket or the X11 `:0` socket, detects the installed Chromium
-name, and uses a dedicated profile in `/var/lib/muse-kiosk`. It launches
-`http://127.0.0.1:8000` with kiosk, no-first-run, crash-bubble suppression, and
-component-update suppression. It does not use incognito, remote debugging,
-`--no-sandbox`, or another sandbox-disabling flag. Browser `sessionStorage` and
-the existing Splash behavior therefore remain intact.
+detects a Wayland socket or the X11 `:0` socket, and detects the installed
+Chromium name. `HOME`, `XDG_CONFIG_HOME`, `XDG_CACHE_HOME`, `XDG_DATA_HOME`, and
+the Chromium profile all resolve beneath the operator-owned, mode-`0700`
+`/var/lib/muse-kiosk/<desktop-user>` tree. The launcher derives
+`XDG_RUNTIME_DIR` and the session bus from the runtime UID instead of assuming a
+username or UID. A detected Wayland socket selects `--ozone-platform=wayland`;
+an X11-only session receives no Wayland override.
+
+The production command opens `http://127.0.0.1:8000` with this validated flag
+set:
+
+```text
+--ozone-platform=wayland  # Wayland sessions only
+--kiosk
+--no-first-run
+--no-default-browser-check
+--password-store=basic
+--disable-breakpad
+--disable-crash-reporter
+--disable-session-crashed-bubble
+--disable-background-networking
+--disable-component-update
+--disable-domain-reliability
+--disable-sync
+--no-pings
+--disable-features=Translate,MediaRouter,OptimizationHints
+--user-data-dir=/var/lib/muse-kiosk/<desktop-user>/chromium
+```
+
+The initial permanent service failed with exit code `21` and logged
+`chrome_crashpad_handler: --database is required`. A manual launch using the
+private HOME/XDG tree and the crash-reporting flags above reached Muse in
+fullscreen, accepted touch input, and ran until an intentional 15-second
+timeout returned `124`. `--password-store=basic` is required because the
+system-managed kiosk is not allowed to wait for an interactive Linux keyring
+creation/unlock prompt. Muse does not save browser passwords, and all kiosk
+state remains inside the private operator-owned tree.
+
+Chromium 150 also emitted non-fatal GCM `PHONE_REGISTRATION_ERROR` messages
+during the successful manual run. Chromium's documented
+[`--disable-background-networking`](https://source.chromium.org/chromium/chromium/src/+/main:chrome/common/chrome_switches.cc)
+switch is the narrow supported control for background networking; Muse combines
+it with component-update, domain-reliability, sync, ping, Media Router,
+Translate, and Optimization Hints suppression. The current Chromium switch
+registry exposes no supported general `--disable-gcm` switch. Push API
+background-mode controls affect browser lifetime, not all in-process GCM users,
+so adding one would not be an evidence-based fix for this message. Muse does not
+add an invented flag, disable all networking, or install a firewall workaround.
+Recheck the journal after physical redeployment; the GCM line may remain useful
+diagnostic noise, but it must not restart the service or block local HTTP, QR
+upload, touch, or rendering.
+
+The kiosk does not use incognito, remote debugging, `--no-sandbox`, or another
+sandbox-disabling flag. Browser `sessionStorage` and the existing Splash
+behavior therefore remain intact.
 
 The service does not install multiple desktop autostart systems. If the target
 graphical session does not permit the system unit to access its compositor,

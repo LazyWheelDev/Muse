@@ -173,13 +173,37 @@ listener exposes a core route.
 
 ```bash
 sudo systemctl status 'muse-kiosk@kyle.service' --no-pager
-sudo journalctl -u 'muse-kiosk@kyle.service' -n 100 --no-pager
+sudo systemctl show 'muse-kiosk@kyle.service' \
+  --property=User --property=MainPID --property=Environment --no-pager
+sudo systemctl cat 'muse-kiosk@kyle.service'
+sudo stat -c '%U:%G %a %n' \
+  /var/lib/muse-kiosk/kyle \
+  /var/lib/muse-kiosk/kyle/config \
+  /var/lib/muse-kiosk/kyle/cache \
+  /var/lib/muse-kiosk/kyle/data \
+  /var/lib/muse-kiosk/kyle/chromium
+KIOSK_PID="$(sudo systemctl show 'muse-kiosk@kyle.service' --property=MainPID --value)"
+sudo sh -c 'tr "\0" "\n" < "/proc/$1/environ"' sh "$KIOSK_PID" | \
+  grep -E '^(HOME|XDG_CONFIG_HOME|XDG_CACHE_HOME|XDG_DATA_HOME|XDG_RUNTIME_DIR|DBUS_SESSION_BUS_ADDRESS|WAYLAND_DISPLAY|DISPLAY|MUSE_KIOSK_PROFILE)='
+sudo sh -c 'tr "\0" " " < "/proc/$1/cmdline"; echo' sh "$KIOSK_PID"
+sudo journalctl -b -u 'muse-kiosk@kyle.service' -n 200 --no-pager
 ```
 
-The desktop and browser chrome should disappear after readiness. If the kiosk
-cannot enter the detected graphical session, do not add multiple autostart
-systems. Review the actual `loginctl` session and choose one session-native
-integration before changing the unit.
+Confirm that every listed kiosk directory is owned by `kyle` and mode `700`;
+HOME/XDG/profile values point beneath `/var/lib/muse-kiosk/kyle`; the runtime
+path uses the actual operator UID; and a Wayland command contains
+`--ozone-platform=wayland`. An X11-only command must omit the Wayland override
+and expose `DISPLAY=:0`. The journal must not contain
+`chrome_crashpad_handler: --database is required`, an exit-code-21 loop, a
+keyring prompt, or verbose debug logging. A non-fatal GCM
+`PHONE_REGISTRATION_ERROR` may still be reported by Chromium 150; record it and
+confirm that it does not restart the active service.
+
+The desktop and browser chrome should disappear after readiness. Local QR
+upload, touch input, and navigation must still work. If the kiosk cannot enter
+the detected graphical session, do not add multiple autostart systems. Review
+the actual `loginctl` session and choose one session-native integration before
+changing the unit.
 
 From a terminal inside the graphical session, inspect the exact planned change:
 
@@ -227,6 +251,9 @@ then reconnect:
 ssh kyle@muse.local
 sudo /opt/muse/current/kiosk/muse-ctl status
 sudo /opt/muse/current/kiosk/muse-ctl network-verify
+sudo systemctl is-active 'muse-kiosk@kyle.service'
+sudo systemctl show 'muse-kiosk@kyle.service' --property=MainPID --property=NRestarts --no-pager
+sudo journalctl -b -u 'muse-kiosk@kyle.service' --no-pager
 ```
 
 This is the first permitted real reboot in the procedure. Record boot-to-Home
