@@ -35,6 +35,7 @@ configuration outside the active code tree:
 | Wardrobe data, SQLite, media, backups | `/var/lib/muse`                      | `muse:muse`, `0700`                                     |
 | Chromium profile and XDG state        | `/var/lib/muse-kiosk/<desktop-user>` | desktop user; directories `0700`, service umask `0077`  |
 | Production settings                   | `/etc/muse/muse.env`                 | `root:muse`, `0640`                                     |
+| Shared volatile runtime directory     | `/run/muse`                          | `root:muse`, `0750`, recreated by systemd-tmpfiles      |
 | Generated network settings            | `/run/muse/network.env`              | `root:muse`, `0640`, atomic and ephemeral               |
 | Logs                                  | journald                             | no application log files                                |
 
@@ -58,8 +59,8 @@ Review actual package availability first. The target needs:
 - Python `3.13.x`, including the standard-library `venv` support supplied by the
   selected OS packaging;
 - `uv 0.11.28` available to root during installation;
-- systemd, sudo, iproute2 (`ip` and `ss`), and standard GNU user-management
-  tools;
+- systemd including `systemd-tmpfiles`, sudo, iproute2 (`ip` and `ss`), and
+  standard GNU user-management tools;
 - system Chromium, detected as `/usr/bin/chromium` or
   `/usr/bin/chromium-browser`;
 - SQLite command-line tools for optional manual inspection;
@@ -125,12 +126,14 @@ The root installer:
    `uv sync --locked --no-dev --no-editable --no-install-project --no-python-downloads`
    into that release's `.venv`;
 7. makes the completed release root-owned and non-writable;
-8. stages the systemd units, constrained helper, and exact sudoers allowlist;
-9. creates `/etc/muse/muse.env` only when it does not already exist;
-10. migrates and checks a disposable database under `/run/muse` as the `muse`
+8. installs `/usr/lib/tmpfiles.d/muse.conf` and applies it to create the shared
+   `root:muse`, mode-`0750` `/run/muse` directory;
+9. stages the systemd units, constrained helper, and exact sudoers allowlist;
+10. creates `/etc/muse/muse.env` only when it does not already exist;
+11. migrates and checks a disposable database under `/run/muse` as the `muse`
     account without touching wardrobe data;
-11. installs root-owned service assets only after preflight succeeds;
-12. activates the release atomically and verifies readiness and listener
+12. installs root-owned service assets only after preflight succeeds;
+13. activates the release atomically and verifies readiness and listener
     isolation.
 
 `--offline-dependencies` tells uv to use only a previously populated local
@@ -206,6 +209,16 @@ bounded `/proc` files. The main service permits `AF_NETLINK` in addition to
 Unix, IPv4, and IPv6 sockets because Python's `socket.if_nameindex()` uses the
 netlink interface on Raspberry Pi OS during local-address discovery. The main
 HTTP listener remains explicitly bound to `127.0.0.1`.
+
+`/run` is a volatile tmpfs and is empty again after a cold boot. The packaged
+`/usr/lib/tmpfiles.d/muse.conf` therefore recreates `/run/muse` as
+`root:muse`, mode `0750`, before `muse-prepare.service` constructs its mount
+namespace. The preparation unit explicitly requires and follows
+`systemd-tmpfiles-setup.service`. Ownership remains with root so the `muse`
+application account can traverse and read the root-owned `0640` network file
+but cannot replace it. `RuntimeDirectory=muse` is intentionally not used:
+because preparation runs as `muse`, it would weaken that ownership and couple a
+directory shared by several services to one unit's lifecycle.
 
 The kiosk uses `PrivateTmp=true` and `ProtectHome=read-only`. The latter keeps
 the compositor-owned `/run/user/<uid>/wayland-*` socket visible but read-only;
@@ -408,8 +421,10 @@ To remove application code while preserving personal data:
 sudo systemctl disable --now 'muse-kiosk@kyle.service' muse-network-refresh.timer \
   muse-phone-upload.service muse-main.service muse-prepare.service
 sudo rm -f /etc/systemd/system/muse-*.service /etc/systemd/system/muse-*.timer
-sudo rm -f /usr/libexec/muse-device-control /etc/sudoers.d/muse-device-control
+sudo rm -f /usr/lib/tmpfiles.d/muse.conf \
+  /usr/libexec/muse-device-control /etc/sudoers.d/muse-device-control
 sudo rm -rf /opt/muse /var/lib/muse-kiosk
+sudo rmdir /run/muse 2>/dev/null || true
 sudo systemctl daemon-reload
 ```
 

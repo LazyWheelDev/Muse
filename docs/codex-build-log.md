@@ -1,5 +1,52 @@
 # Codex build log
 
+## 2026-07-18 — Cold-boot runtime-directory correction
+
+### Confirmed root cause
+
+- The first full Pi reboot reached systemd mount-namespace construction with
+  `/run/muse` absent. `muse-prepare.service` declared that path in
+  `ReadWritePaths`, so it failed at `NAMESPACE` with status `226` before Muse
+  application code could run. Main, phone upload, network refresh, and kiosk
+  then failed through their declared dependencies.
+- The installer had created `/run/muse` as `root:muse`, mode `0750`, which made
+  every warm activation pass. `/run` is volatile, however, and the repository
+  shipped neither a tmpfiles rule nor a runtime-directory producer for the next
+  boot. Persistent `/var/lib/muse` data and backups were never in scope of the
+  failure and were not reset or modified during diagnosis.
+
+### Permanent correction and regression
+
+- Added a packaged `systemd-tmpfiles` rule for `/run/muse` with the existing
+  `root:muse`, mode-`0750` security contract. The installer places it in
+  `/usr/lib/tmpfiles.d/muse.conf`, applies it before activation, and refuses to
+  continue if the resulting type, ownership, or mode is wrong.
+- Preparation explicitly requires and follows
+  `systemd-tmpfiles-setup.service`. A `RuntimeDirectory` on the `User=muse`
+  unit was rejected because it would make the shared directory application-user
+  owned and couple its lifecycle to one service.
+- The Linux deployment verifier no longer pre-creates its `/run/muse` fixture.
+  It starts with the path absent, invokes the real tmpfiles implementation in an
+  isolated root with a real `root:muse` identity mapping, asserts mode and
+  numeric ownership, and only then verifies the service graph.
+- Earlier validation missed the defect because `systemd-analyze verify` checks
+  unit structure without starting the mount namespace, the verifier supplied
+  the missing directory itself, the installer regression used `--no-services`,
+  and physical readiness had only been checked during warm activation. The
+  documented per-release cold-boot gate remained open and caught the failure.
+
+### Verification status
+
+- Focused local kiosk/deployment tests passed 21 tests with the Linux-only
+  installer test skipped on macOS. Ruff, Bash syntax, ShellCheck, shfmt, static
+  deployment verification, and whitespace checks passed.
+- The complete backend suite passed 269 tests with the same platform skip and
+  85.21% branch coverage. Frontend typecheck, ESLint, Prettier, dependency audit,
+  230 Vitest tests, and both production builds passed with the pinned Node and
+  npm versions.
+- The Linux clean-root tmpfiles execution, corrected immutable archive, and
+  physical cold boot are recorded after their respective gates complete.
+
 ## 2026-07-17 — Build Week demo release stabilization
 
 ### Physical baseline and release fixes

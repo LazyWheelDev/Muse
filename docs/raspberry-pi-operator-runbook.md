@@ -170,6 +170,9 @@ sudo /opt/muse/current/kiosk/muse-ctl network-verify
 sudo systemd-analyze verify /etc/systemd/system/muse-*.service /etc/systemd/system/muse-*.timer
 sudo systemd-analyze security muse-main.service muse-phone-upload.service muse-prepare.service
 sudo systemctl show muse-main.service --property=RestrictAddressFamilies --no-pager
+sudo systemctl cat muse-prepare.service
+sudo cat /usr/lib/tmpfiles.d/muse.conf
+sudo stat --format='%U:%G %a %n' /run/muse
 sudo systemctl cat muse-main.service
 sudo /opt/muse/current/.venv/bin/python /opt/muse/current/kiosk/muse-doctor \
   --full --output /tmp/muse-device-discovery.json
@@ -184,6 +187,8 @@ Confirm:
 - restricted core paths all return 404;
 - `/var/lib/muse` is private and database checks pass;
 - the active release and commit match the built manifest;
+- `/run/muse` is a real directory owned `root:muse` with mode `750`, and the
+  tmpfiles rule is exactly `d /run/muse 0750 root muse - -`;
 - no hardening directive is rejected by the target systemd version.
 
 Create one session through the loopback API without displaying its token, check
@@ -331,11 +336,15 @@ sudo /opt/muse/current/kiosk/muse-ctl status
 sudo /opt/muse/current/kiosk/muse-ctl network-verify
 sudo systemctl is-active 'muse-kiosk@kyle.service'
 sudo systemctl show 'muse-kiosk@kyle.service' --property=MainPID --property=NRestarts --no-pager
+sudo stat --format='%U:%G %a %n' /run/muse
+sudo journalctl -b -u muse-prepare.service --no-pager
 sudo journalctl -b -u 'muse-kiosk@kyle.service' --no-pager
 ```
 
 This is the first permitted real reboot in the procedure. Record boot-to-Home
 time, service states, display mode, touch alignment, temperature, and throttling.
+The boot fails if `/run/muse` is absent, has the wrong ownership or mode, or the
+prepare journal contains `226/NAMESPACE`.
 
 ## 9. Run the hackathon flow
 

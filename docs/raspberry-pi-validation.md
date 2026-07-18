@@ -43,6 +43,23 @@ directly. The demo release is not considered cold-boot validated until it is
 installed, the temporary drop-ins are removed, the device is rebooted, and the
 same persisted wardrobe and saved outfits remain visible.
 
+## July 18, 2026 cold-boot diagnostic
+
+The first full cold-boot gate correctly remained open and exposed one additional
+release defect. `/run/muse` had been created only by the installer. Because
+`/run` is volatile, the directory disappeared at reboot and
+`muse-prepare.service` failed before `ExecStart` while systemd constructed the
+`ReadWritePaths=/run/muse` namespace (`226/NAMESPACE`). Main, phone upload,
+network refresh, and kiosk then failed through their dependencies. No wardrobe,
+outfit, upload, media, or backup data was modified.
+
+The repository now packages a systemd-tmpfiles rule that recreates `/run/muse`
+as `root:muse`, mode `0750`, on every boot, and orders preparation after
+`systemd-tmpfiles-setup.service`. Linux CI begins with the directory absent,
+applies the real rule in an isolated root, checks numeric ownership and mode,
+then verifies the units. The corrected immutable release still requires one
+physical cold boot before this gate can be closed.
+
 ## Prepare a representative data set
 
 Use a disposable copy of the production configuration. Import at least 60

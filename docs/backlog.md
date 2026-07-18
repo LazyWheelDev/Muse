@@ -369,9 +369,11 @@ by the installed P7 capabilities.
 - [x] Add readable local logs
 - [ ] Test a full device reboot
 
-The July 17 run validated the installed functional baseline. The final checkbox
-remains open until the new immutable release is deployed without its temporary
-systemd drop-ins and passes one clean cold reboot with production data intact.
+The July 17 run validated the installed functional baseline. The first cold boot
+on July 18 exposed the missing volatile `/run/muse` creation contract before any
+application code ran. The final checkbox remains open until the corrected
+tmpfiles-backed immutable release is deployed without temporary systemd
+drop-ins and passes a clean cold boot with production data intact.
 
 ---
 
