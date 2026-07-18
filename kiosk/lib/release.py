@@ -32,6 +32,7 @@ REQUIRED_PATHS = (
     "kiosk/install-on-pi.sh",
     "kiosk/launch-kiosk.sh",
     "kiosk/muse-backend",
+    "kiosk/tmpfiles.d/muse.conf",
     "kiosk/systemd/muse-kiosk@.service",
     "kiosk/systemd/muse-main.service",
     "docs/raspberry-pi-deployment.md",

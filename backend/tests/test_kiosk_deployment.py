@@ -422,6 +422,24 @@ def test_main_unit_allows_netlink_for_interface_discovery() -> None:
     assert "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK" in main_unit
 
 
+def test_clean_boot_runtime_directory_is_owned_by_systemd_tmpfiles() -> None:
+    prepare_unit = (KIOSK_ROOT / "systemd/muse-prepare.service").read_text(encoding="utf-8")
+    tmpfiles = (KIOSK_ROOT / "tmpfiles.d/muse.conf").read_text(encoding="utf-8")
+    installer = (KIOSK_ROOT / "install-on-pi.sh").read_text(encoding="utf-8")
+
+    assert tmpfiles == "d /run/muse 0750 root muse - -\n"
+    assert "Requires=systemd-tmpfiles-setup.service" in prepare_unit
+    assert "After=local-fs.target systemd-tmpfiles-setup.service" in prepare_unit
+    assert "ReadWritePaths=/var/lib/muse /run/muse" in prepare_unit
+    assert "RuntimeDirectory=muse" not in prepare_unit
+    assert "kiosk/tmpfiles.d/muse.conf" in release.REQUIRED_PATHS
+    assert "install -m 0644 -o root -g root" in installer
+    install_config = installer.index('"${release}/kiosk/tmpfiles.d/muse.conf"')
+    apply_config = installer.index('systemd-tmpfiles --create "$tmpfiles_destination"')
+    activate_release = installer.index('"${release}/kiosk/activate-release.sh"')
+    assert install_config < apply_config < activate_release
+
+
 def test_kiosk_unit_keeps_wayland_visible_without_writable_runtime_access() -> None:
     kiosk_unit = (KIOSK_ROOT / "systemd/muse-kiosk@.service").read_text(encoding="utf-8")
 
@@ -735,6 +753,10 @@ def test_sandbox_install_is_idempotent_and_preserves_data(tmp_path: Path) -> Non
     assert environment.read_text(encoding="utf-8") == "MUSE_ENVIRONMENT=production\n"
     assert environment.stat().st_mode & 0o777 == 0o640
     assert (sandbox / "opt/muse/releases" / VALID_RELEASE_ID).stat().st_mode & 0o777 == 0o555
+    assert (sandbox / "usr/lib/tmpfiles.d/muse.conf").read_text(encoding="utf-8") == (
+        "d /run/muse 0750 root muse - -\n"
+    )
+    assert (sandbox / "usr/lib/tmpfiles.d/muse.conf").stat().st_mode & 0o777 == 0o644
     for directory in (
         kiosk_operator_root,
         kiosk_operator_root / "config",

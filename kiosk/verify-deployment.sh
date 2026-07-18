@@ -38,6 +38,12 @@ fi
 
 grep -Fq '/opt/muse/current/kiosk/muse-backend serve --host 127.0.0.1 --port 8000' "$SCRIPT_DIR/systemd/muse-main.service"
 grep -Fq 'RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK' "$SCRIPT_DIR/systemd/muse-main.service"
+grep -Fxq 'd /run/muse 0750 root muse - -' "$SCRIPT_DIR/tmpfiles.d/muse.conf"
+grep -Fq 'Requires=systemd-tmpfiles-setup.service' "$SCRIPT_DIR/systemd/muse-prepare.service"
+grep -Fq 'After=local-fs.target systemd-tmpfiles-setup.service' "$SCRIPT_DIR/systemd/muse-prepare.service"
+# The installer contract must retain the literal variable for its runtime destination.
+# shellcheck disable=SC2016
+grep -Fq 'systemd-tmpfiles --create "$tmpfiles_destination"' "$SCRIPT_DIR/install-on-pi.sh"
 grep -Fq 'EnvironmentFile=/run/muse/network.env' "$SCRIPT_DIR/systemd/muse-phone-upload.service"
 grep -Fq 'ConditionPathExists=/run/muse/network.env' "$SCRIPT_DIR/systemd/muse-phone-upload.service"
 grep -Fq -- '--check-existing' "$SCRIPT_DIR/systemd/muse-phone-upload.service"
@@ -96,6 +102,14 @@ if ! command -v systemd-analyze >/dev/null; then
   printf 'systemd-analyze unavailable; unit syntax verification skipped on this host.\n'
   exit 0
 fi
+if [[ "$require_systemd" -eq 1 && "$EUID" -ne 0 ]]; then
+  printf 'Root is required to verify root:muse clean-boot runtime ownership.\n' >&2
+  exit 1
+fi
+command -v systemd-tmpfiles >/dev/null || {
+  printf 'systemd-tmpfiles is required.\n' >&2
+  exit 1
+}
 
 sandbox="$(mktemp -d "${TMPDIR:-/tmp}/muse-systemd-verify.XXXXXX")"
 trap 'rm -rf -- "$sandbox"' EXIT
@@ -105,14 +119,20 @@ install -d -m 0755 \
   "$sandbox/opt/muse/current/backend" \
   "$sandbox/opt/muse/current/.venv/bin" \
   "$sandbox/opt/muse/current/kiosk/lib" \
-  "$sandbox/run/muse" \
+  "$sandbox/run" \
   "$sandbox/run/user" \
+  "$sandbox/usr/lib/tmpfiles.d" \
   "$sandbox/var/lib/muse" \
   "$sandbox/var/lib/muse-kiosk/test" \
   "$sandbox/etc"
 cp "$SCRIPT_DIR/systemd/"* "$sandbox/etc/systemd/system/"
+cp "$SCRIPT_DIR/tmpfiles.d/muse.conf" "$sandbox/usr/lib/tmpfiles.d/muse.conf"
 printf 'root:x:0:0:root:/root:/bin/sh\nmuse:x:999:999:Muse:/nonexistent:/usr/sbin/nologin\ntest:x:1000:1000:Test:/nonexistent:/bin/sh\n' >"$sandbox/etc/passwd"
 printf 'root:x:0:\nmuse:x:999:\ntest:x:1000:\n' >"$sandbox/etc/group"
+[[ ! -e "$sandbox/run/muse" ]]
+systemd-tmpfiles --root="$sandbox" --create
+[[ -d "$sandbox/run/muse" && ! -L "$sandbox/run/muse" ]]
+[[ "$(stat -c '%a:%u:%g' "$sandbox/run/muse")" == "750:0:999" ]]
 printf 'MUSE_ENVIRONMENT=production\n' >"$sandbox/etc/muse/muse.env"
 # DefaultDependencies adds standard boot and shutdown targets beyond those named by Muse units.
 for target in \
@@ -126,6 +146,8 @@ for target in \
   timers.target; do
   printf '[Unit]\nDescription=CI stub for %s\n' "$target" >"$sandbox/etc/systemd/system/$target"
 done
+printf '[Unit]\nDescription=CI stub for systemd tmpfiles setup\n[Service]\nType=oneshot\nExecStart=/opt/muse/current/kiosk/muse-backend --help\nRemainAfterExit=yes\n' \
+  >"$sandbox/etc/systemd/system/systemd-tmpfiles-setup.service"
 for target in sysinit.target basic.target shutdown.target; do
   if [[ ! -f "$sandbox/etc/systemd/system/$target" ]]; then
     printf 'Missing systemd DefaultDependencies target stub: %s\n' "$target" >&2

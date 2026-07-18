@@ -65,7 +65,7 @@ jobs:
         run: |
           uv python find 3.13 > "${RUNNER_TEMP}/python-path"
           ln -s "$(cat "${RUNNER_TEMP}/python-path")" "$PYTHON_BIN"
-          ./kiosk/verify-deployment.sh --require-systemd
+          sudo env PYTHON_BIN="$PYTHON_BIN" ./kiosk/verify-deployment.sh --require-systemd
 
       - name: Verify backend lock file
         working-directory: backend

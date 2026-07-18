@@ -1,6 +1,7 @@
 [Unit]
 Description=Prepare Muse data and migrations before listeners start
-After=local-fs.target
+Requires=systemd-tmpfiles-setup.service
+After=local-fs.target systemd-tmpfiles-setup.service
 Before=muse-main.service muse-phone-upload.service
 
 [Service]

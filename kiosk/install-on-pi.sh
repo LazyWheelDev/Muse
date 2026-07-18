@@ -149,6 +149,7 @@ config_root="${root_prefix}/etc/muse"
 runtime_root="${root_prefix}/run/muse"
 kiosk_data_root="${root_prefix}/var/lib/muse-kiosk"
 systemd_root="${root_prefix}/etc/systemd/system"
+tmpfiles_root="${root_prefix}/usr/lib/tmpfiles.d"
 libexec_root="${root_prefix}/usr/libexec"
 sudoers_root="${root_prefix}/etc/sudoers.d"
 
@@ -167,7 +168,12 @@ fi
 install -d -m 0755 "${opt_root}" "${opt_root}/releases" "${opt_root}/staging" "${opt_root}/state"
 install -d -m 0700 "$data_root"
 install -d -m 0750 "$config_root" "$runtime_root"
-install -d -m 0755 "$kiosk_data_root" "$systemd_root" "$libexec_root" "$sudoers_root"
+install -d -m 0755 \
+  "$kiosk_data_root" \
+  "$systemd_root" \
+  "$tmpfiles_root" \
+  "$libexec_root" \
+  "$sudoers_root"
 install -d -m 0700 \
   "${kiosk_data_root}/${operator_user}" \
   "${kiosk_data_root}/${operator_user}/config" \
@@ -255,6 +261,27 @@ if [[ ! -e "${config_root}/muse.env" ]]; then
   else
     install -m 0640 "${release}/kiosk/muse.env.example" "${config_root}/muse.env"
   fi
+fi
+
+tmpfiles_destination="${tmpfiles_root}/muse.conf"
+if [[ -z "$root_prefix" ]]; then
+  command -v systemd-tmpfiles >/dev/null || {
+    printf 'systemd-tmpfiles is required for the volatile Muse runtime directory.\n' >&2
+    exit 1
+  }
+  install -m 0644 -o root -g root \
+    "${release}/kiosk/tmpfiles.d/muse.conf" "$tmpfiles_destination"
+  systemd-tmpfiles --create "$tmpfiles_destination"
+  [[ -d "$runtime_root" && ! -L "$runtime_root" ]] || {
+    printf 'Muse runtime directory was not created safely.\n' >&2
+    exit 1
+  }
+  [[ "$(stat -c '%a:%U:%G' "$runtime_root")" == "750:root:muse" ]] || {
+    printf 'Muse runtime directory ownership or mode is invalid.\n' >&2
+    exit 1
+  }
+else
+  install -m 0644 "${release}/kiosk/tmpfiles.d/muse.conf" "$tmpfiles_destination"
 fi
 
 if [[ -n "$root_prefix" ]]; then
